@@ -130,10 +130,10 @@ python3.13 -m venv .venv && source .venv/bin/activate && pip install -e .
 cp .env.example .env && $EDITOR .env
 
 # 3. Learn your product from your website
-harvey train https://your-company.com
+harvey train https://www.cooltechnicalservices.com
 
 # 4. Choose what makes a good prospect (see below — this one matters)
-harvey signals --confirm free
+Hotel schools Cafe Clubs Warehouse Villa and apartment households Gyms, salons, and retail locations  Property managers and building operators
 
 # 5. Find businesses. Free source, no account needed.
 harvey discover
