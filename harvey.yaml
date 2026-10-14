@@ -64,3 +64,8 @@ usage:
     start: "22:00"
     end: "07:00"
     timezone: "America/New_York"
+
+# brain:
+#   provider: "claude"         # claude (default) | codex | antigravity
+#   model: ""                  # optional: e.g. gemini-3.8-flash-high or claude-sonnet-4-6
+#   reasoning_effort: ""       # optional: low | medium | high | xhigh | max
