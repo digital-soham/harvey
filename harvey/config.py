@@ -126,6 +126,11 @@ class PreclearedConfig(BaseModel):
     # is "unknown"; use "published" only if yours are copied from the
     # businesses' own websites.
     address_source: str = "unknown"
+    # Optional: the country your prospects are in (two letters, e.g. "US"),
+    # if they are all in one. Precleared uses it only when it can't work out
+    # the recipient's country from the address, company records or the
+    # company's website. Leave empty if your prospects are spread out.
+    prospect_country: str = ""
 
     @field_validator("sender_country", mode="before")
     @classmethod
@@ -140,6 +145,18 @@ class PreclearedConfig(BaseModel):
             raise ValueError(
                 f"'{v}' is not a valid address_source. "
                 f"Use one of: {', '.join(PRECLEARED_ADDRESS_SOURCES)}."
+            )
+        return v
+
+    @field_validator("prospect_country", mode="before")
+    @classmethod
+    def _valid_prospect_country(cls, v) -> str:
+        v = str(v or "").strip().upper()
+        v = {"UK": "GB", "USA": "US"}.get(v, v)
+        if v and not (len(v) == 2 and v.isascii() and v.isalpha()):
+            raise ValueError(
+                f"'{v}' is not a valid prospect_country. Use a two-letter "
+                "country code such as US or GB, or leave it empty."
             )
         return v
 

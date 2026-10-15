@@ -9,12 +9,14 @@ id is logged with the send so the decision can be shown later.
 
 One check per address: a definite verdict is cached in the settings table for
 CACHE_DAYS, together with a fingerprint of the facts it was decided on (sender
-country, address source, product description). A cached verdict is reused only
-while those facts are unchanged, so a three-step sequence costs one check but a
-config change forces a fresh one. Replies are never checked. Precleared
-receives the recipient's address, your sender country, the address source you
-configure and your product description (used to judge relevance under CASL and
-French rules).
+country, address source, product description and, if set, prospect country). A
+cached verdict is reused only while those facts are unchanged, so a three-step
+sequence costs one check but a config change forces a fresh one. Replies are
+never checked. Precleared receives the recipient's address, your sender
+country, the address source you configure, your product description (used to
+judge relevance under CASL and French rules) and, if you set one, your
+prospects' country, which it uses only when it can't work out the recipient's
+country from the address, company records or the company's website.
 
 A response Precleared can't vouch for (network trouble, daily allowance used
 up, a bad key, or a malformed body) holds cold email for a later cycle instead
@@ -73,12 +75,14 @@ class PreclearedClient:
         api_key: str = "",
         address_source: str = "unknown",
         pitch: str = "",
+        prospect_country: str = "",
         transport: httpx.AsyncBaseTransport | None = None,
     ):
         self.sender_country = sender_country
         self.api_key = api_key or ""
         self.address_source = address_source
         self.pitch = (pitch or "").strip()[:200]
+        self.prospect_country = (prospect_country or "").strip().upper()
         self._transport = transport  # tests inject httpx.MockTransport
 
     @classmethod
@@ -94,6 +98,7 @@ class PreclearedClient:
             api_key=getattr(env, "precleared_api_key", ""),
             address_source=settings.address_source,
             pitch=getattr(product, "description", ""),
+            prospect_country=getattr(settings, "prospect_country", ""),
         )
 
     def _redact(self, text: str) -> str:
@@ -114,6 +119,10 @@ class PreclearedClient:
             "pitch": self.pitch,
             "existing_customer": False,
         }
+        if self.prospect_country:
+            # Only when set, so cached verdicts from before the setting existed
+            # still match.
+            facts["prospect_country"] = self.prospect_country
         return hashlib.sha256(json.dumps(facts, sort_keys=True).encode()).hexdigest()
 
     async def clear(self, to_email: str, state) -> Clearance:
@@ -147,6 +156,10 @@ class PreclearedClient:
         }
         if self.pitch:
             payload["pitch"] = self.pitch
+        if self.prospect_country:
+            # Precleared uses this only when the address, company records and
+            # the company's website don't show the recipient's country.
+            payload["default_recipient_country"] = self.prospect_country
         headers = {
             "Content-Type": "application/json",
             "User-Agent": "harvey (+https://github.com/ethanplusai/harvey)",

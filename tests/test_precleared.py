@@ -140,6 +140,47 @@ def test_from_config_reads_settings_key_and_pitch():
     assert client.pitch == "Route planning for delivery firms"
 
 
+def test_prospect_country_is_optional_and_normalised():
+    assert PreclearedConfig(enabled=True, sender_country="US").prospect_country == ""
+    cfg = PreclearedConfig(enabled=True, sender_country="US", prospect_country=" us ")
+    assert cfg.prospect_country == "US"
+    cfg = PreclearedConfig(enabled=True, sender_country="GB", prospect_country="uk")
+    assert cfg.prospect_country == "GB"
+    with pytest.raises(ValidationError):
+        PreclearedConfig(enabled=True, sender_country="US", prospect_country="United States")
+
+
+def test_from_config_reads_prospect_country():
+    config = SimpleNamespace(
+        compliance=SimpleNamespace(precleared=PreclearedConfig(
+            enabled=True, sender_country="US", prospect_country="US",
+        )),
+        product=SimpleNamespace(description=""),
+    )
+    client = PreclearedClient.from_config(config, SimpleNamespace(precleared_api_key=""))
+    assert client.prospect_country == "US"
+
+
+@pytest.mark.asyncio
+async def test_prospect_country_is_sent_as_a_fallback_only_when_set(state):
+    calls = []
+    without = PreclearedClient("US", transport=mock_precleared(calls, OK_BODY))
+    await without.clear("jane@acme.com", state)
+    assert "default_recipient_country" not in calls[0]["json"]
+
+    with_country = PreclearedClient(
+        "US", prospect_country="US", transport=mock_precleared(calls, OK_BODY),
+    )
+    await with_country.clear("john@acme.com", state)
+    assert calls[1]["json"]["default_recipient_country"] == "US"
+
+
+def test_prospect_country_changes_the_cache_fingerprint_only_when_set():
+    base = PreclearedClient("US")._fingerprint()
+    assert PreclearedClient("US", prospect_country="")._fingerprint() == base
+    assert PreclearedClient("US", prospect_country="US")._fingerprint() != base
+
+
 # ── verdicts ──
 
 
