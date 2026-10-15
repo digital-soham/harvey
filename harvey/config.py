@@ -205,6 +205,52 @@ class BrainConfig(BaseModel):
         return v
 
 
+class ComplianceConfig(BaseModel):
+    """What every cold (sequence) email must carry. CAN-SPAM requires a
+    valid physical postal address and a working way to opt out; the
+    pre-send gate refuses sequence email until postal_address is set."""
+
+    postal_address: str = ""
+    # The opt-out instruction appended to every sequence email. The handler
+    # treats a "no thanks" reply as an immediate, permanent opt-out.
+    opt_out_line: str = 'Not interested? Reply "no thanks" and I won\'t email again.'
+
+
+class TellwingConfig(BaseModel):
+    """Tellwing only ever receives people who said yes.
+
+    Cold email never goes out through Tellwing. Its landing page is the one
+    link cold email may carry, and a prospect is added to the Tellwing list
+    (by API, TELLWING_API_KEY in .env) only after replying yes to
+    ``permission_question``.
+    """
+
+    enabled: bool = False
+    list_id: int = 0
+    # e.g. https://tellwing.site/you/offer — written as {{landing_url}}
+    # in emails; any other link in a sequence email is blocked by the gate.
+    landing_url: str = ""
+    permission_question: str = (
+        "Separately, mind if I send you a short case study now and then? "
+        "A simple yes or no is fine."
+    )
+
+    @field_validator("landing_url")
+    @classmethod
+    def _https_landing(cls, v: str) -> str:
+        v = (v or "").strip()
+        if v and not v.startswith("https://"):
+            raise ValueError("landing_url must start with https://")
+        return v
+
+    @field_validator("list_id")
+    @classmethod
+    def _list_id_non_negative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("list_id must be a Tellwing list id (a positive number)")
+        return v
+
+
 class HarveyConfig(BaseModel):
     persona: PersonaConfig
     product: ProductConfig
@@ -212,6 +258,8 @@ class HarveyConfig(BaseModel):
     channels: ChannelsConfig = ChannelsConfig()
     usage: UsageConfig = UsageConfig()
     brain: BrainConfig = BrainConfig()
+    compliance: ComplianceConfig = ComplianceConfig()
+    tellwing: TellwingConfig = TellwingConfig()
 
 
 class EnvConfig(BaseModel):
@@ -237,6 +285,8 @@ class EnvConfig(BaseModel):
     imap_port: int = 993
     imap_username: str = ""
     imap_password: str = ""
+    # Tellwing API key with the subscribers:write scope
+    tellwing_api_key: str = ""
 
 
 def _format_validation_error(e: ValidationError) -> str:
@@ -347,6 +397,7 @@ def load_env() -> EnvConfig:
         imap_port=int(os.getenv("IMAP_PORT", "993").strip() or 993),
         imap_username=os.getenv("IMAP_USERNAME", "").strip(),
         imap_password=os.getenv("IMAP_PASSWORD", "").strip(),
+        tellwing_api_key=os.getenv("TELLWING_API_KEY", "").strip(),
     )
     return env
 

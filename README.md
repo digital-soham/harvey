@@ -317,7 +317,9 @@ harvey outbox --approve-all
 harvey sending pause          # kill switch, stops everything mid-flight
 ```
 
-Before anything leaves, a **deterministic pre-send gate** — no model involved — rejects: unrendered merge tags, banned phrases, emails over the length cap, too many links, HTML bodies, non-deliverable addresses, and any mismatch between the recipient and the database record.
+Before anything leaves, a **deterministic pre-send gate** — no model involved — rejects: unrendered merge tags, banned phrases, emails over the length cap, too many links, HTML bodies, non-deliverable addresses, any mismatch between the recipient and the database record, and a cold email without your postal address in its footer.
+
+**Optional: hand the yeses to a newsletter tool.** When a prospect replies with interest, Harvey can ask once whether they'd like an occasional case study, and add only the ones who say yes to a [Tellwing](https://tellwing.com) list, with their exact words recorded as consent. Cold email never goes through it. See [docs/tellwing.md](docs/tellwing.md).
 
 When you trust it, set `channels.email.require_approval: false` for full autopilot.
 
@@ -455,7 +457,7 @@ What to know:
 
 Harvey automates outreach, but **you are the sender.** Cold email is legal in most places when done right and expensive when done wrong — CAN-SPAM penalties run to $53,088 per email. Harvey ships with compliant defaults. Keep them.
 
-**CAN-SPAM (US).** Truthful subject line and accurate from-address — Harvey's copywriting rules forbid fake "re:" threads and impersonation. A working opt-out, honored fast: Harvey treats any opt-out wording as immediate and permanent. Your physical mailing address in the footer — configure this before your first campaign.
+**CAN-SPAM (US).** Truthful subject line and accurate from-address — Harvey's copywriting rules forbid fake "re:" threads and impersonation. A working opt-out, honored fast: Harvey treats any opt-out wording as immediate and permanent. Your physical mailing address in the footer: set `compliance.postal_address`, and Harvey appends it with an opt-out line to every cold email. Until it's set, cold email is held in the Outbox.
 
 **GDPR / PECR (EU & UK).** B2B cold email needs a defensible legitimate interest: the pitch must be genuinely relevant to that person's role, you must know where the data came from, and objecting must be effortless. If you can't say why a specific person would care, Harvey shouldn't email them — and its qualification rules say so.
 

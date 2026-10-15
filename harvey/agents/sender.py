@@ -345,6 +345,21 @@ class Sender:
             text = text.replace("{{ " + key + " }}", value or "")
         return text.strip()
 
+    def _finalize_sequence_body(self, body: str) -> str:
+        """What a cold email looks like when it leaves: the landing page
+        filled in, and the postal address + opt-out line underneath."""
+        landing_url = self.config.tellwing.landing_url
+        if landing_url:
+            body = re.sub(r"\{\{\s*landing_url\s*\}\}", landing_url, body)
+        compliance = self.config.compliance
+        address = compliance.postal_address.strip()
+        if address and address not in body:
+            footer = address
+            if compliance.opt_out_line.strip():
+                footer += "\n" + compliance.opt_out_line.strip()
+            body = body.rstrip() + "\n\n" + footer
+        return body
+
     async def _stage_campaign_native(self, campaign):
         """Render + schedule a draft campaign's emails into the outbox."""
         if not self._validate_sequence(campaign):
@@ -441,10 +456,19 @@ class Sender:
             return
 
         allow_risky = getattr(self.config.channels.email, "send_to_risky", False)
+        compliance = self.config.compliance
+        landing_url = self.config.tellwing.landing_url
+        held_for_address = 0
         sent = 0
         for item in due:
             if sent >= budget:
                 break
+
+            # Cold email can't leave without a postal address (CAN-SPAM).
+            # Hold it rather than fail it, so it goes once that's configured.
+            if item["kind"] == "sequence" and not compliance.postal_address.strip():
+                held_for_address += 1
+                continue
 
             prospect = await self.state.get_prospect(item["prospect_id"])
             if prospect is None:
@@ -461,9 +485,16 @@ class Sender:
                 )
                 continue
 
+            body = item["body"]
+            if item["kind"] == "sequence":
+                body = self._finalize_sequence_body(body)
+
             gate = pre_send_check(
-                item["to_email"], item["subject"], item["body"],
+                item["to_email"], item["subject"], body,
                 prospect=prospect, allow_risky=allow_risky, kind=item["kind"],
+                postal_address=(compliance.postal_address
+                                if item["kind"] == "sequence" else None),
+                landing_url=landing_url,
             )
             if not gate:
                 await self.state.update_outbox_item(
@@ -477,7 +508,7 @@ class Sender:
                 continue
 
             result = await self.provider.send_email(
-                item["to_email"], item["subject"], item["body"],
+                item["to_email"], item["subject"], body,
                 thread_ref=item.get("thread_ref", ""),
                 in_reply_to=item.get("in_reply_to", ""),
             )
@@ -490,7 +521,7 @@ class Sender:
             sent += 1
             now_iso = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             await self.state.update_outbox_item(
-                item["id"], status="sent", sent_at=now_iso,
+                item["id"], status="sent", sent_at=now_iso, body=body,
                 message_id=result.message_id, thread_ref=result.thread_ref,
             )
             if prospect.status in ("new", "queued"):
@@ -527,6 +558,12 @@ class Sender:
             if self.send_pacing and sent < budget:
                 await asyncio.sleep(random.uniform(*SEND_JITTER_SECONDS))
 
+        if held_for_address:
+            logger.warning(
+                f"Sender: holding {held_for_address} cold email(s): set "
+                "compliance.postal_address in harvey.yaml (CAN-SPAM requires "
+                "a postal address in every cold email)."
+            )
         if sent:
             logger.info(f"Sender: {sent} email(s) sent this cycle "
                         f"({sent_today + sent}/{max_daily} today).")

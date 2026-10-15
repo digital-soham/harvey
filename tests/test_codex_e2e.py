@@ -44,6 +44,7 @@ BASE = {
     "icp": {"industries": ["software"], "company_size": "10-50", "titles": ["VP"],
             "geography": ["US"]},
     "channels": {"email": {"provider": "smtp", "require_approval": True}},
+    "compliance": {"postal_address": "1 Test Way, Austin, TX 78701"},
 }
 
 FAKE_CLAUDE = (

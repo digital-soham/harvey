@@ -14,6 +14,7 @@ it isn't a MailProvider because Instantly owns sequencing/sending itself.
 """
 
 import logging
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
@@ -50,6 +51,36 @@ BOUNCE_SUBJECTS = (
     "delivery failure", "failure notice", "could not be delivered",
     "delivery incomplete", "address not found",
 )
+
+
+# Where a reply stops being the sender's own words and starts quoting the
+# email it answers. Without this, a reply quotes Harvey's footer ('Reply
+# "no thanks"') and every answer would read as an opt-out.
+_QUOTE_HEADERS = (
+    # Gmail / Apple Mail: "On Tue, Oct 14, 2026 at 3:02 PM Name <a@b.c> wrote:"
+    # (clients wrap it, so allow one line break before "wrote:")
+    re.compile(r"^[ \t]*On\b[^\n]{0,300}(?:\n[^\n]{0,300})?\bwrote:[ \t]*$",
+               re.MULTILINE),
+    re.compile(r"^[ \t]*El\b[^\n]{0,300}(?:\n[^\n]{0,300})?\bescribi[oó]:[ \t]*$",
+               re.MULTILINE),
+    # Outlook
+    re.compile(r"^[ \t]*-{2,}[ \t]*Original Message[ \t]*-{2,}", re.MULTILINE | re.IGNORECASE),
+    re.compile(r"^[ \t]*From:[^\n]*\n[ \t]*(?:Sent|Date):", re.MULTILINE),
+    re.compile(r"^[ \t]*_{10,}[ \t]*$", re.MULTILINE),
+    # Plain ">" quoting
+    re.compile(r"^[ \t]*>", re.MULTILINE),
+)
+
+
+def strip_quoted_reply(body: str) -> str:
+    """Return only what the sender wrote above the quoted original."""
+    text = (body or "").replace("\r\n", "\n")
+    cut = len(text)
+    for pattern in _QUOTE_HEADERS:
+        m = pattern.search(text)
+        if m and m.start() < cut:
+            cut = m.start()
+    return text[:cut].strip()
 
 
 def looks_like_bounce(from_email: str, subject: str) -> bool:

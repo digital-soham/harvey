@@ -53,8 +53,15 @@ def pre_send_check(
     prospect=None,
     allow_risky: bool = False,
     kind: str = "sequence",
+    postal_address: str | None = None,
+    landing_url: str = "",
 ) -> GateResult:
-    """Run every deterministic check. Returns ok=False with reasons on any hit."""
+    """Run every deterministic check. Returns ok=False with reasons on any hit.
+
+    postal_address: when given (not None), a sequence email must carry it —
+    an empty string means it isn't configured, and the email is blocked.
+    landing_url: when set, it is the only link a sequence email may carry.
+    """
     reasons: list[str] = []
     subject = (subject or "").strip()
     body = (body or "").strip()
@@ -99,6 +106,26 @@ def pre_send_check(
     links = URL_RE.findall(body)
     if len(links) > MAX_LINKS:
         reasons.append(f"too many links ({len(links)} > {MAX_LINKS})")
+
+    if kind == "sequence":
+        # CAN-SPAM: a valid physical postal address in every cold email.
+        if postal_address is not None:
+            if not postal_address.strip():
+                reasons.append(
+                    "compliance.postal_address is not set in harvey.yaml "
+                    "(CAN-SPAM requires it in every cold email)"
+                )
+            elif postal_address.strip() not in body:
+                reasons.append("postal address footer missing")
+        if landing_url:
+            base = landing_url.rstrip("/")
+            cleaned = [u.rstrip(".,;:!?)\"'").rstrip("/") for u in links]
+            stray = [
+                u for u in cleaned
+                if u != base and not u.startswith((base + "?", base + "#", base + "/"))
+            ]
+            if stray:
+                reasons.append(f"link other than the landing page: {stray[0][:80]}")
 
     # No HTML — Harvey sends plain text only
     if re.search(r"<\s*(html|body|div|table|img|a)\b", body, re.IGNORECASE):

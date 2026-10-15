@@ -5,6 +5,35 @@ Notable changes to Harvey. Dates are release dates; the format follows
 follow [semver](https://semver.org/), with the caveat that Harvey is pre-1.0 and
 minor versions can still change behaviour.
 
+## [Unreleased]
+
+### Added
+
+- **Compliance footer on cold email.** `compliance.postal_address` and
+  `compliance.opt_out_line` are appended to every sequence email at send time
+  (CAN-SPAM). The pre-send gate checks the address is there.
+- **Optional Tellwing handoff.** With `tellwing.enabled`, an interested reply
+  gets one permission question ("mind if I send you a short case study now and
+  then?"). Only a verified address whose owner explicitly says yes, to a
+  question that was actually sent, is added to a Tellwing list, with their
+  verbatim words as `consent_text`. It is idempotent per person and never
+  resubscribes. `tellwing.landing_url` becomes the only link a cold email may
+  carry. See [docs/tellwing.md](docs/tellwing.md).
+
+### Changed
+
+- **Cold email is held until `compliance.postal_address` is set.** It waits in
+  the Outbox; it isn't failed. Replies are unaffected.
+- "no thanks" / "no thank you" replies are opt-outs, matching the footer's
+  instruction.
+
+### Fixed
+
+- **Reply intent is read from the prospect's own words only.** The quoted
+  original (`On … wrote:`, Outlook's `From:/Sent:` block, `>` lines) is cut
+  before classification, so text quoted from Harvey's email can't trigger an
+  opt-out or an escalation.
+
 ## [0.3.0] — 2026-10-13
 
 ### Added

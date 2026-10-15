@@ -275,6 +275,14 @@ Pricing: {self.config.product.pricing}"""
         if self.skills:
             prompt += "\n\n" + self.skills
 
+        link_rule = (
+            "- Links: none in email 1. If a link helps in email 2 or 3, write\n"
+            "  exactly {{landing_url}} (it becomes the landing page with the\n"
+            "  offer). Never type a URL yourself. At most one link in the sequence.\n"
+            if self.config.tellwing.landing_url
+            else "- No links.\n"
+        )
+
         prompt += f"""
 
 Write a 3-email cold outreach sequence for prospects like these:
@@ -289,6 +297,7 @@ Requirements:
   these prospects' industry or role (use the notes above).
 - Never be pushy or salesy. Be consultative and value-driven.
 - Subject lines: lowercase, 2-5 words.
+{link_rule}- Do not add a postal address or an unsubscribe line: both are added at send time.
 - Follow every rule in the STRICT EMAIL RULES above. No exceptions.
 
 Return ONLY a JSON array (no markdown fences, no commentary):

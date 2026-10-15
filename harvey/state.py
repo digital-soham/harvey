@@ -413,6 +413,27 @@ MIGRATIONS: list[str] = [
     -- so one subscription's budget never consumes the other's.
     ALTER TABLE usage_log ADD COLUMN codex_calls INTEGER DEFAULT 0;
     """,
+    # ── v12: permission to add a prospect to Tellwing, one row per person ──
+    """
+    -- status: asked -> granted -> subscribed, or declined / blocked.
+    -- consent_text is the prospect's own yes, stored verbatim for Tellwing.
+    CREATE TABLE IF NOT EXISTS tellwing_consent (
+        prospect_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        ask_outbox_id TEXT DEFAULT '',
+        question TEXT DEFAULT '',
+        consent_text TEXT DEFAULT '',
+        consent_at TIMESTAMP DEFAULT NULL,
+        idempotency_key TEXT DEFAULT '',
+        subscriber_id TEXT DEFAULT '',
+        attempts INTEGER DEFAULT 0,
+        last_error TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_tellwing_consent_status
+        ON tellwing_consent(status);
+    """,
 ]
 
 BRAIN_PROVIDERS = ("claude", "codex")
@@ -1587,6 +1608,62 @@ class StateManager:
                 (*kwargs.values(), _utcnow().isoformat(), convo_id),
             )
             await db.commit()
+
+    # ── Tellwing consent ──
+
+    _TELLWING_CONSENT_COLUMNS = frozenset({
+        "status", "ask_outbox_id", "question", "consent_text", "consent_at",
+        "idempotency_key", "subscriber_id", "attempts", "last_error",
+    })
+
+    async def get_tellwing_consent(self, prospect_id: str) -> dict | None:
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM tellwing_consent WHERE prospect_id = ?",
+                (prospect_id,),
+            ) as cursor:
+                row = await cursor.fetchone()
+                return dict(row) if row else None
+
+    async def add_tellwing_ask(
+        self, prospect_id: str, ask_outbox_id: str, question: str
+    ) -> bool:
+        """Record that the permission question was queued. Never overwrites:
+        a person is asked once, and a no is final."""
+        async with self._connect() as db:
+            cursor = await db.execute(
+                """INSERT OR IGNORE INTO tellwing_consent
+                   (prospect_id, status, ask_outbox_id, question)
+                   VALUES (?, 'asked', ?, ?)""",
+                (prospect_id, ask_outbox_id, question),
+            )
+            await db.commit()
+            return cursor.rowcount > 0
+
+    async def update_tellwing_consent(self, prospect_id: str, **kwargs):
+        fields = {k: v for k, v in kwargs.items()
+                  if k in self._TELLWING_CONSENT_COLUMNS}
+        if not fields:
+            return
+        sets = ", ".join(f"{k} = ?" for k in fields)
+        async with self._connect() as db:
+            await db.execute(
+                f"UPDATE tellwing_consent SET {sets}, updated_at = ? "
+                "WHERE prospect_id = ?",
+                (*fields.values(), _utcnow().isoformat(), prospect_id),
+            )
+            await db.commit()
+
+    async def get_tellwing_consents(self, status: str) -> list[dict]:
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM tellwing_consent WHERE status = ? "
+                "ORDER BY updated_at ASC",
+                (status,),
+            ) as cursor:
+                return [dict(r) for r in await cursor.fetchall()]
 
     # ── Actions Log ──
 

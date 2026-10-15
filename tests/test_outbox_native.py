@@ -78,9 +78,20 @@ class Cfg:
         class linkedin:
             enabled = False
 
+    class compliance:
+        postal_address = "123 Main St, Austin, TX 78701"
+        opt_out_line = 'Not interested? Reply "no thanks" and I won\'t email again.'
+
+    class tellwing:
+        enabled = False
+        list_id = 0
+        landing_url = ""
+        permission_question = "Mind if I send you a case study now and then?"
+
 
 class Env:
     instantly_api_key = ""
+    tellwing_api_key = ""
 
 
 def make_sender(state, provider, require_approval=True):

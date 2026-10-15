@@ -57,6 +57,23 @@ channels:
     max_daily_connections: 20
     max_daily_messages: 10
 
+# Every cold email gets these two lines underneath (CAN-SPAM). Cold email is
+# held until postal_address is set: a street address or a PO box / virtual
+# mailbox you can receive mail at.
+compliance:
+  postal_address: ""
+  opt_out_line: 'Not interested? Reply "no thanks" and I won''t email again.'
+
+# Tellwing never sends cold email. Its landing page is the only link cold
+# email may carry (written as {{landing_url}}), and someone is added to the
+# Tellwing list (TELLWING_API_KEY in .env) only after replying yes to
+# permission_question, which Harvey asks once, of interested replies.
+tellwing:
+  enabled: false
+  list_id: 0                   # the Tellwing list's numeric id
+  landing_url: ""              # e.g. https://tellwing.site/you/offer
+  permission_question: "Separately, mind if I send you a short case study now and then? A simple yes or no is fine."
+
 usage:
   max_daily_claude_percent: 80
   heartbeat_interval_minutes: 15
