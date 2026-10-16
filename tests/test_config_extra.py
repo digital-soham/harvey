@@ -160,6 +160,8 @@ def test_offer_override():
 
 
 def test_load_env_reads_environment(monkeypatch):
+    # Don't read a developer's real .env — its keys would leak into the test.
+    monkeypatch.setattr("harvey.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("INSTANTLY_API_KEY", "key-123")
     monkeypatch.setenv("SERPER_API_KEY", "  serp-456  ")
     monkeypatch.delenv("HUNTER_API_KEY", raising=False)
