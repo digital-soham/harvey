@@ -264,6 +264,60 @@ class BrainConfig(BaseModel):
         return v
 
 
+class RegionConfig(BaseModel):
+    timezone: str
+    geography: list[str] = []   # what Scout searches for on this region's day
+
+    @field_validator("timezone")
+    @classmethod
+    def _valid_timezone(cls, v: str) -> str:
+        import pytz
+
+        if v not in pytz.all_timezones_set:
+            raise ValueError(f"'{v}' is not a valid timezone (IANA name, e.g. 'Europe/London').")
+        return v
+
+
+class ScheduleConfig(BaseModel):
+    """Region rotation (see harvey/schedule.py). Off by default."""
+    enabled: bool = False
+    # weekday -> region; days left out (weekends by default) send nothing
+    # and are used to review follow-ups instead.
+    weekdays: dict[str, str] = {"mon": "us", "tue": "uk", "wed": "europe",
+                                "thu": "us", "fri": "uk"}
+    regions: dict[str, RegionConfig] = {
+        "us": RegionConfig(timezone="America/New_York", geography=["United States"]),
+        "uk": RegionConfig(timezone="Europe/London", geography=["United Kingdom"]),
+        "europe": RegionConfig(timezone="Europe/Berlin", geography=[
+            "Germany", "Netherlands", "Ireland", "France", "Sweden", "Denmark"]),
+    }
+    send_window_start: str = "09:00"   # recipient's local time
+    send_window_end: str = "11:30"
+    max_daily_new: int = 3             # first emails (new people) per region day
+    max_daily_followups: int = 3       # reviewed follow-ups per region day
+    followup_min_chance: int = 4       # 1-10; below this a follow-up is cancelled
+    review_days_ahead: int = 7         # weekend review covers follow-ups due this soon
+
+    @field_validator("weekdays")
+    @classmethod
+    def _valid_weekdays(cls, v: dict[str, str]) -> dict[str, str]:
+        days = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+        out = {k.strip().lower()[:3]: r for k, r in v.items()}
+        bad = [k for k in out if k not in days]
+        if bad:
+            raise ValueError(f"schedule.weekdays has unknown day(s) {bad}; use mon..sun.")
+        return out
+
+    @field_validator("send_window_start", "send_window_end")
+    @classmethod
+    def _valid_time(cls, v: str) -> str:
+        try:
+            _time.fromisoformat(v)
+        except ValueError:
+            raise ValueError(f"'{v}' is not a valid time. Use 24h HH:MM, e.g. '09:00'.")
+        return v
+
+
 class HarveyConfig(BaseModel):
     persona: PersonaConfig
     product: ProductConfig
@@ -271,6 +325,7 @@ class HarveyConfig(BaseModel):
     channels: ChannelsConfig = ChannelsConfig()
     usage: UsageConfig = UsageConfig()
     brain: BrainConfig = BrainConfig()
+    schedule: ScheduleConfig = ScheduleConfig()
 
 
 class EnvConfig(BaseModel):

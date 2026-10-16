@@ -88,6 +88,8 @@ async def decide_next_action(
     """
     if summary is None:
         summary = await state.get_state_summary()
+    if config.schedule.enabled:
+        return await decide_scheduled_action(state, config, summary)
 
     prospects = summary.get("prospects") or {}
     new_prospects = prospects.get("new", 0) if isinstance(prospects, dict) else 0
@@ -107,6 +109,57 @@ async def decide_next_action(
 
     logger.info(f"Decision: {action} ({reason})")
     return action
+
+
+async def decide_scheduled_action(state: StateManager, config: HarveyConfig, summary: dict) -> str:
+    """Region-rotation priorities (schedule.enabled):
+
+    handle_replies > send_campaign > review_followups (rest days) >
+    write_campaign (today's region, quota left, prospects ready) >
+    prospect (next region's pool is low) > idle.
+    """
+    from harvey import schedule
+    from harvey.agents.followups import FollowupReviewer
+
+    sched = config.schedule
+    regions = schedule.todays_regions(sched)
+
+    if (summary.get("open_conversations", 0) or 0) > 0:
+        action, reason = "handle_replies", "open conversation(s) waiting"
+    elif (summary.get("draft_campaigns", 0) or 0) > 0:
+        action, reason = "send_campaign", "draft campaign(s) ready to stage"
+    elif schedule.is_rest_day(sched, config.usage.quiet_hours.timezone) and \
+            await FollowupReviewer(None, state, config).pending():
+        action, reason = "review_followups", "rest day: reviewing next week's follow-ups"
+    else:
+        ready = await schedule.ready_by_region(state, sched)
+        written = int(await state.get_setting(schedule.written_key(regions), "0") or 0) if regions else 0
+        upcoming = schedule.next_region(sched)
+        if regions and written < sched.max_daily_new and any(ready.get(r) for r in regions):
+            action, reason = "write_campaign", f"{'+'.join(regions)} day: {written}/{sched.max_daily_new} researched"
+        elif ready.get(upcoming, 0) < sched.max_daily_new * 2:
+            action, reason = "prospect", f"only {ready.get(upcoming, 0)} ready for next region ({upcoming})"
+        else:
+            action, reason = "idle", f"today's work done; {ready.get(upcoming, 0)} ready for {upcoming}"
+
+    logger.info(f"Decision: {action} ({reason})")
+    return action
+
+
+async def _scout_run(scout, config: HarveyConfig):
+    """Scout; under region rotation, search the next sending region's geography."""
+    if not config.schedule.enabled:
+        return await scout.run()
+    from harvey import schedule
+
+    region = schedule.next_region(config.schedule)
+    original = config.icp.geography
+    config.icp.geography = config.schedule.regions[region].geography or original
+    logger.info(f"Scout: prospecting for the {region} rotation ({', '.join(config.icp.geography)}).")
+    try:
+        return await scout.run()
+    finally:
+        config.icp.geography = original
 
 
 async def _run_agents(tasks: list) -> dict:
@@ -189,12 +242,14 @@ async def heartbeat(stop_event: asyncio.Event | None = None):
     from harvey.agents.sender import Sender
     from harvey.agents.handler import Handler
     from harvey.agents.analyst import Analyst
+    from harvey.agents.followups import FollowupReviewer
 
     scout = Scout(brain, state, config, env)
     writer = Writer(brain, state, config, env)
     sender = Sender(brain, state, config, env)
     handler = Handler(brain, state, config, env)
     analyst = Analyst(state)
+    followups = FollowupReviewer(brain, state, config, env)
 
     interval = config.usage.heartbeat_interval_minutes * 60
     max_calls = max(int(200 * (config.usage.max_daily_claude_percent / 100)), 1)
@@ -264,7 +319,7 @@ async def heartbeat(stop_event: asyncio.Event | None = None):
             if action == "handle_replies":
                 tasks.append(("handle_replies", handler.run()))
             elif action == "prospect":
-                tasks.append(("prospect", scout.run()))
+                tasks.append(("prospect", _scout_run(scout, config)))
                 # Also handle replies in parallel if needed
                 if has_open_convos:
                     tasks.append(("handle_replies", handler.run()))
@@ -274,6 +329,8 @@ async def heartbeat(stop_event: asyncio.Event | None = None):
                 tasks.append(("write_campaign", writer.run()))
                 if has_open_convos:
                     tasks.append(("handle_replies", handler.run()))
+            elif action == "review_followups":
+                tasks.append(("review_followups", followups.run()))
             elif action == "idle":
                 tasks.append(("analyze", analyst.run()))
 

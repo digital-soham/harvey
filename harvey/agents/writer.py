@@ -13,7 +13,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from harvey import research
+from harvey import research, schedule
 from harvey.brain import Brain
 from harvey.config import HarveyConfig
 from harvey.integrations.mail_provider import NATIVE_PROVIDERS
@@ -270,6 +270,24 @@ Return ONLY JSON: {{"subject": "...", "body": "..."}}"""
         """
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         quota = max(1, self.config.channels.email.max_daily_sends // DEEP_SEQUENCE_LENGTH)
+        sched = getattr(self.config, "schedule", None)
+        if sched is not None and sched.enabled:
+            # Region rotation: only today's region, its own daily quota.
+            regions = schedule.todays_regions(sched)
+            if not regions:
+                logger.info("Writer: no region's sending day right now; nothing to write.")
+                return
+            quota = sched.max_daily_new
+            today = schedule.written_key(regions).removeprefix("deep_written:")
+            kept = []
+            for p in prospects:
+                company = await self.state.get_company(p.company_id) if p.company_id else None
+                if await schedule.region_of(self.state, p, company, sched) in regions:
+                    kept.append(p)
+            prospects = kept
+            if not prospects:
+                logger.info(f"Writer: no ready prospects for today's region ({', '.join(regions)}).")
+                return
         written_key, tried_key = f"deep_written:{today}", f"deep_tried:{today}"
         written = int(await self.state.get_setting(written_key, "0") or 0)
         tried = int(await self.state.get_setting(tried_key, "0") or 0)

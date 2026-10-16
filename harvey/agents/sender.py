@@ -16,6 +16,7 @@ import random
 import re
 from datetime import date, datetime, timedelta, timezone
 
+from harvey import schedule
 from harvey.brain import Brain
 from harvey.config import HarveyConfig, EnvConfig
 from harvey.gate import pre_send_check
@@ -34,6 +35,8 @@ SEND_JITTER_SECONDS = (4, 15)
 STOP_STATUSES = {"replied", "opted_out", "lost", "meeting", "closed"}
 
 KILL_SWITCH_KEY = "sending_paused"
+# Set by the follow-up reviewer: "send:<chance>" or "skip:<reason>".
+FOLLOWUP_REVIEW_PREFIX = "followup_review:"
 BOUNCE_COUNT_KEY = "bounce_count"
 
 EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
@@ -447,9 +450,16 @@ class Sender:
             logger.info(f"Sender: daily send cap reached ({sent_today}/{max_daily}).")
             return
 
+        sched = getattr(self.config, "schedule", None)
+        rotating = sched is not None and sched.enabled
+        if rotating:
+            first_today, followups_today = await self.state.count_outbox_sent_today_split()
+
         now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         due = await self.state.get_outbox(
-            status="approved", due_before=now, limit=budget * 3
+            status="approved", due_before=now,
+            # Rotation skips other regions' items, so look further down the queue.
+            limit=500 if rotating else budget * 3,
         )
         if not due:
             return
@@ -474,6 +484,25 @@ class Sender:
                     error=f"prospect status '{prospect.status}'",
                 )
                 continue
+
+            if rotating and item["kind"] == "sequence":
+                is_followup = (item.get("step") or 1) > 1
+                if is_followup and followups_today >= sched.max_daily_followups:
+                    continue
+                if not is_followup and first_today >= sched.max_daily_new:
+                    continue
+                company = (await self.state.get_company(prospect.company_id)
+                           if prospect.company_id else None)
+                region = await schedule.region_of(self.state, prospect, company, sched)
+                if not schedule.is_sending_now(sched, region):
+                    continue  # wait for this region's day and local morning
+                if is_followup:
+                    verdict = await self.state.get_setting(FOLLOWUP_REVIEW_PREFIX + item["id"])
+                    if not verdict.startswith("send"):
+                        continue  # not reviewed yet: the weekend review decides
+                    followups_today += 1
+                else:
+                    first_today += 1
 
             gate = pre_send_check(
                 item["to_email"], item["subject"], item["body"],

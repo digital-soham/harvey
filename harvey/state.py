@@ -943,6 +943,39 @@ class StateManager:
             ) as cursor:
                 return (await cursor.fetchone())[0]
 
+    async def count_outbox_sent_today_split(self) -> tuple[int, int]:
+        """(first emails, follow-ups) sent today — sequence mail only."""
+        async with self._connect() as db:
+            async with db.execute(
+                "SELECT COALESCE(SUM(step <= 1), 0), COALESCE(SUM(step > 1), 0) "
+                "FROM outbox WHERE status = 'sent' AND kind = 'sequence' "
+                "AND date(sent_at) = date('now')"
+            ) as cursor:
+                first, followups = await cursor.fetchone()
+                return int(first), int(followups)
+
+    async def get_upcoming_followups(self, due_before: str, limit: int = 200) -> list[dict]:
+        """Queued sequence steps 2+ due before ``due_before``, oldest first."""
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM outbox WHERE kind = 'sequence' AND step > 1 "
+                "AND status IN ('pending_review', 'approved') "
+                "AND (send_at IS NULL OR send_at <= ?) "
+                "ORDER BY send_at ASC LIMIT ?",
+                (due_before, int(limit)),
+            ) as cursor:
+                return [dict(r) for r in await cursor.fetchall()]
+
+    async def get_sent_outbox_for_prospect(self, prospect_id: str) -> list[dict]:
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM outbox WHERE prospect_id = ? AND status = 'sent' "
+                "ORDER BY sent_at ASC", (prospect_id,),
+            ) as cursor:
+                return [dict(r) for r in await cursor.fetchall()]
+
     async def find_outbox_by_message_id(self, message_id: str) -> dict | None:
         if not message_id:
             return None

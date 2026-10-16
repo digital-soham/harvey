@@ -24,6 +24,19 @@ minor versions can still change behaviour.
   the research doesn't support. Prospects without a specific hook are parked
   as `no_hook` instead of getting a generic template. Researches
   `max_daily_sends // 3` people a day.
+- **Region rotation** (`schedule.enabled`). Each weekday belongs to one
+  region (default Mon US, Tue UK, Wed Europe, Thu US, Fri UK). On a region's
+  day Harvey researches its best-scoring prospects (`max_daily_new`) and
+  sends only inside the recipient's local morning (`send_window_start/end`).
+  Prospects are tagged by recorded location, country TLD, then a free scan of
+  their homepage/contact page, cached per company. Scout searches the next
+  sending region's geography and only when that region's ready pool is low.
+- **Follow-up reviewer.** On days with no region (weekends by default),
+  Harvey re-researches each person with follow-ups due soon and rates their
+  realistic chance of becoming a client; below `followup_min_chance` the
+  follow-ups are cancelled, otherwise they're approved (and may be rewritten
+  around new findings) for the person's next region day. Under rotation,
+  follow-ups never send unreviewed and have their own `max_daily_followups`.
 
 ### Fixed
 
