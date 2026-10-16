@@ -126,6 +126,9 @@ def test_listicle_titles_are_junk_even_with_a_clean_domain():
     assert D.is_junk("example.com", "Top Roofing Contractors in Dallas")
     assert D.is_junk("example.com", "Roofer Directory")
     assert not D.is_junk("example.com", "Northvale Roofing Company")
+    assert D.is_junk("example.net", "Ohio HOA Management Company List")
+    assert D.is_junk("example.com", "List of Plumbers in Austin")
+    assert not D.is_junk("example.com", "Northvale Management")
 
 
 def test_normalize_domain_is_the_entity_key():
@@ -658,3 +661,40 @@ async def test_an_unmappable_term_is_reported_not_silently_skipped(
                                                      coordinate="1,2,40")])
     assert report.found == 0
     assert report.errors and "no category" in report.errors[0]
+
+
+# ── business names: SERP titles are page titles, not names ──
+
+@pytest.mark.parametrize("title,domain,expected", [
+    ("Northvale Property Management: HOA Management Company in ...", "northvaleproperty.com",
+     "Northvale Property Management"),
+    ("Home Page - NVCM | Community Association Management", "nvcmnet.com", "NVCM"),
+    ("Northvale Association of Community Managers", "nacm.org",
+     "Northvale Association of Community Managers"),
+    ("Brightwater Texas: Texas HOA Property Management Company", "brightwatertexas.com",
+     "Brightwater Texas"),
+    # No segment names the business → fall back to the domain, split sensibly.
+    ("Denver, CO | HOA Management Firm", "managementharbor.com", "Management Harbor"),
+    ("Texas HOA management", "kqresidential.com", "KQ Residential"),
+    ("Great Texas Community Management Begins Here", "growwithus.us", "Grow With Us"),
+])
+def test_business_name_from_serp_title(title, domain, expected):
+    assert D.business_name(title, domain) == expected
+
+
+def test_generic_words_alone_never_match_the_domain():
+    """'Management' is in managementharbor.com but says nothing about it."""
+    assert not D.name_matches_domain("HOA Management Firm", "managementharbor.com")
+    assert D.name_matches_domain("The Management Harbor", "managementharbor.com")
+
+
+def test_site_name_prefers_og_then_title_and_needs_domain_backing():
+    og = '<meta property="og:site_name" content="Grow Community Management" />'
+    assert D.site_name_from_html(og, "growwithus.us") == "Grow Community Management"
+    title = "<title>Lumen Association Management - HOA Company in TX &amp; CO</title>"
+    assert D.site_name_from_html(title, "lumenam.com") == "Lumen Association Management"
+    both = ('<meta property="og:site_name" content="Management Harbor">'
+            "<title>The Management Harbor: Community Management</title>")
+    assert D.site_name_from_html(both, "managementharbor.com") == "The Management Harbor"
+    assert D.site_name_from_html("<title>Attention Required! | Cloudflare</title>",
+                                 "lumenam.com") == ""

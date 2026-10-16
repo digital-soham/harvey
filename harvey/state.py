@@ -1254,6 +1254,20 @@ class StateManager:
             )
             await db.commit()
 
+    async def rename_company(self, company_id: str, name: str):
+        """Set a company's name, and the copy each of its prospects carries."""
+        async with self._connect() as db:
+            await db.execute(
+                "UPDATE companies SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (name, company_id),
+            )
+            await db.execute(
+                "UPDATE prospects SET company = ?, updated_at = CURRENT_TIMESTAMP "
+                "WHERE company_id = ?",
+                (name, company_id),
+            )
+            await db.commit()
+
     async def companies_needing_prospects(
         self, limit: int = 10, stale_days: int = 14
     ) -> list[dict]:

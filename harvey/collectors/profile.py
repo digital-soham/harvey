@@ -18,6 +18,10 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
+from harvey.collectors.discover import (
+    name_from_domain, name_matches_domain, site_name_from_html,
+)
+
 logger = logging.getLogger("harvey.collectors.profile")
 
 TIMEOUT = httpx.Timeout(connect=8.0, read=12.0, write=8.0, pool=8.0)
@@ -122,13 +126,63 @@ shingles tile flat emergency 24 hour hours today now new best top quality
 privacy policy terms conditions sitemap blog news events why choose us
 areas served locations location city county state north south east west
 español espanol menu skip navigation search close open toggle
+hoa hoas condo condos association associations board boards community
+communities management property properties owners residents customer care
+scope alignment implementation consistency communication process driven
+focused structured
 """.split())
+
+# Tokens that are words, not names, whatever the vertical: abstract nouns
+# ("Scope Alignment", "Board Communication") and shouted acronyms ("HOA").
+_NOUN_SUFFIX = re.compile(r"(tion|tions|sion|sions|ness)$")
+
+
+def _is_name_token(token: str) -> bool:
+    for part in token.split("-"):
+        bare = part.strip(".,'")
+        low = bare.lower()
+        if low in NON_NAME_WORDS or _NOUN_SUFFIX.search(low):
+            return False
+        if len(bare) >= 3 and bare.isupper():
+            return False
+    return True
+
+
+# Block-level tags separate a name, its title, and the bio that follows; the
+# first text chunk after the name heading is the title, nothing further.
+_BLOCK_BREAK = re.compile(r"(?i)<(?:/?(?:p|div|li|ul|ol|section|article|td|tr)\b[^>]*|br\s*/?)>")
+_CONNECTORS = frozenset("of and the for & to in at".split())
+
+
+def _title_chunks(raw_after: str) -> list[str]:
+    raw_after = re.sub(r"<[^>]*$", "", raw_after)   # a tag cut off by the window
+    chunks = []
+    for piece in _BLOCK_BREAK.split(raw_after):
+        text = html_unescape(re.sub(r"(?s)<[^>]+>", " ", piece))
+        text = re.sub(r"\s+", " ", text).strip(" ,.|-–—·")
+        if text:
+            chunks.append(text)
+    return chunks
+
+
+def _reads_like_title(text: str) -> bool:
+    """A job title is short and mostly capitalised; a sentence is neither.
+
+    "Desiring consistent oversight and a trusted management partner" contains
+    the role word "partner" but is marketing copy, not a title.
+    """
+    words = text.split()
+    if not words or len(words) > 10:
+        return False
+    lower = [w for w in words[1:] if w[:1].islower() and w.lower() not in _CONNECTORS]
+    return len(lower) <= 2 and title_looks_like_role(text)
 
 DECISION_MAKER_TITLES = (
     "owner", "founder", "co-founder", "president", "ceo", "principal",
     "partner", "general manager", "operations manager", "practice manager",
     "office manager", "marketing director", "marketing manager",
     "director of marketing", "vice president", "vp ", "managing director",
+    "chief", "director",
 )
 
 
@@ -177,6 +231,7 @@ class ProfileCollector:
         self.confirmed = confirmed if confirmed is not None else set()
         self.timeout = timeout
         self._client: httpx.AsyncClient | None = None
+        self.site_names: dict[str, str] = {}
 
     def wants(self, code: str) -> bool:
         return code in self.confirmed
@@ -284,9 +339,11 @@ class ProfileCollector:
         text_html = _strip_code(html)
         people, seen = [], set()
         # Name in a heading, title in the nearby text.
+        # Tag names match any case; the NAME must not — under a blanket (?i)
+        # "Customer care" passes the Firstname Lastname capitalisation test.
         for m in re.finditer(
-            r"(?is)<(h[1-5]|strong|b)[^>]*>\s*([A-Z][a-z'\-]+(?:\s+[A-Z]\.?)?\s+"
-            r"[A-Z][a-zA-Z'\-]+)\s*</\1>(?=(.{0,220}))", text_html
+            r"(?s)<((?i:h[1-5]|strong|b))[^>]*>\s*([A-Z][a-z'\-]+(?:\s+[A-Z]\.?)?\s+"
+            r"[A-Z][a-zA-Z'\-]+)\s*</(?i:\1)>(?=(.{0,220}))", text_html
         ):
             # NOTE the lookahead above: capturing the trailing context normally
             # would CONSUME it, so finditer would skip every person whose entry
@@ -299,8 +356,6 @@ class ProfileCollector:
             nxt = re.search(r"(?i)<(h[1-5]|strong|b)\b", raw_after)
             if nxt:
                 raw_after = raw_after[: nxt.start()]
-            after = html_unescape(re.sub(r"(?s)<[^>]+>", " ", raw_after))
-            after = re.sub(r"\s+", " ", after).strip()
             if name.lower() in seen or len(name) > 45:
                 continue
             # Reject obvious non-names
@@ -308,25 +363,16 @@ class ProfileCollector:
                 continue
             # Reject headings that merely LOOK like names. Every token must be
             # plausibly a name part; one business word disqualifies the whole
-            # match ("Request Service", "Baker History", "Commercial Services").
-            tokens = [t.strip(".,'-").lower() for t in name.split()]
-            if any(t in NON_NAME_WORDS for t in tokens):
+            # match ("Request Service", "Baker History", "HOA Boards").
+            if not all(_is_name_token(t) for t in name.split()):
                 continue
             # A real contact needs a title that reads like a role; a bare
-            # heading with no role text is almost always navigation.
-            if not title_looks_like_role(after):
-                continue
-            title = ""
-            low = after.lower()
-            for t in DECISION_MAKER_TITLES:
-                if t in low:
-                    idx = low.index(t)
-                    title = after[idx:idx + 60].strip(" ,.|-—·")
-                    break
+            # heading with no role text is almost always navigation, and a
+            # heading followed by a sentence is a feature list.
+            title = next((c for c in _title_chunks(raw_after)[:2]
+                          if _reads_like_title(c)), "")
             if not title:
-                m2 = re.match(r"[\s,|\-–—·]*([A-Za-z][A-Za-z /&'\-]{2,45})", after)
-                if m2:
-                    title = m2.group(1).strip()
+                continue
             seen.add(name.lower())
             parts = name.split()
             people.append({
@@ -359,6 +405,7 @@ class ProfileCollector:
             # A failure IS an observation — silent failures look like clean results.
             logger.info(f"profile: {domain} unreachable")
             return obs
+        self.site_names[company_id] = site_name_from_html(home, domain)
 
         # Ads (they are spending TODAY — the strongest budget signal here)
         add("RUNNING_GOOGLE_ADS", num=1 if self._any(home, GOOGLE_ADS) else 0)
@@ -455,6 +502,22 @@ class ProfileCollector:
 
         return obs
 
+    async def _improve_name(self, company: dict, domain: str):
+        """Replace a name the domain doesn't back up ("Denver, CO | HOA
+        Management Firm") or one merely derived from the domain ("Grow With
+        Us") with the one the homepage gives itself. A real match is kept."""
+        better = self.site_names.pop(company["id"], "")
+        current = company.get("name") or ""
+        fallback = current == name_from_domain(domain)
+        if not better or better == current or (
+                name_matches_domain(current, domain) and not fallback):
+            return
+        try:
+            await self.state.rename_company(company["id"], better)
+            logger.info(f"profile: {domain} named '{better}' (was '{current}')")
+        except Exception as e:
+            logger.debug(f"rename_company failed for {domain}: {e}")
+
     async def _mark_checked(self, company_id: str):
         try:
             await self.state.mark_company_profiled(company_id)
@@ -482,6 +545,7 @@ class ProfileCollector:
             # as checked, or the same handful gets retried every cycle
             # forever instead of rotating through the rest of the backlog.
             await self._mark_checked(company["id"])
+            await self._improve_name(company, domain)
             if obs:
                 total += await self.state.add_observations(obs, run_id=run_id)
                 logger.info(f"profile: {domain} → {len(obs)} observation(s)")

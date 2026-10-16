@@ -23,6 +23,7 @@ async def state():
 def collector(confirmed=None):
     c = ProfileCollector.__new__(ProfileCollector)
     c.confirmed = confirmed or set()
+    c.site_names = {}
     return c
 
 
@@ -84,6 +85,42 @@ def test_page_titles_are_not_people():
                   <li><h3>Baker History</h3><p>Founded in 1915</p></li>
                   <li><h3>Commercial Services</h3><p>Roof repair</p></li></ul>"""
     assert collector().detect_people(html) == []
+
+
+def test_feature_lists_are_not_people():
+    """Bold lead-ins on a services page: "<strong>HOA Boards</strong> — ..."."""
+    html = """<ul><li><strong>HOA Boards</strong> — Desiring consistent oversight and
+                  a trusted management partner dedicated to accountability.</li>
+              <li><strong>Scope Alignment</strong> — Service levels are defined
+                  clearly before engagement begins.</li>
+              <li><strong>Process-Driven Consistency</strong> — Structured workflows
+                  for every community.</li></ul>"""
+    assert collector().detect_people(html) == []
+
+
+def test_lowercase_nav_heading_is_not_a_name():
+    html = """<strong class="nav">Customer care</strong>
+              <div>Responsive Customer Service. 24/7/365 Availability.</div>"""
+    assert collector().detect_people(html) == []
+
+
+def test_title_stops_at_the_block_and_never_carries_html():
+    """The 220-char window used to end mid-tag: 'CEO <div class="descriptio'."""
+    bio = "Peter Lindqvist joined Acme in 2005 and serves as CEO, bringing experience. " * 4
+    html = (f'<div><h3>Peter Lindqvist</h3>\n<p>CEO</p>\n<p class="description">{bio}</p>'
+            '<h3>Rosa Delgado</h3><p>President</p></div>')
+    people = collector().detect_people(html)
+    assert [(p["first_name"], p["title"]) for p in people] == [
+        ("Peter", "CEO"), ("Rosa", "President")]
+    assert all(p["is_decision_maker"] for p in people)
+
+
+def test_name_in_link_with_title_after_br():
+    html = ('<p><a href="/nora-bexley/"><strong>Nora Bexley</strong></a>'
+            '<br />Chief Executive Officer</p>')
+    [person] = collector().detect_people(html)
+    assert person["title"] == "Chief Executive Officer"
+    assert person["is_decision_maker"] is True
 
 
 def test_title_role_gate():
@@ -155,3 +192,36 @@ async def test_user_decision_survives_reseeding(state):
     await seed_signal_catalog(state)          # e.g. after an upgrade
     codes = {c["code"]: c["status"] for c in await state.get_signal_codes()}
     assert codes["SERP_RANK"] == "rejected", "re-seeding must not undo a user's choice"
+
+
+@pytest.mark.asyncio
+async def test_profile_upgrades_a_name_the_domain_does_not_back(state, monkeypatch):
+    cid = await state.add_company(Company(name="Denver, CO | HOA Management Firm",
+                                          domain="managementharbor.com"))
+    keep = await state.add_company(Company(name="Birch Management", domain="birchmgt.com"))
+    derived = await state.add_company(Company(name="Grow With Us", domain="growwithus.us"))
+    pages = {
+        "managementharbor.com": '<meta property="og:site_name" content="Management Harbor">',
+        "birchmgt.com": "<title>Denver HOA | Birch Management Group</title>",
+        "growwithus.us": '<meta property="og:site_name" content="Grow Community Management">',
+    }
+
+    async def fake_resolve(self, domain):
+        return f"https://{domain}", pages[domain]
+
+    async def fake_first(self, site, paths):
+        return "", ""
+
+    monkeypatch.setattr(ProfileCollector, "_resolve_site", fake_resolve)
+    monkeypatch.setattr(ProfileCollector, "_first_present", fake_first)
+    async with ProfileCollector(state, {"TECH_STACK"}) as c:
+        await c.run([{"id": cid, "name": "Denver, CO | HOA Management Firm",
+                      "domain": "managementharbor.com"},
+                     {"id": keep, "name": "Birch Management", "domain": "birchmgt.com"},
+                     {"id": derived, "name": "Grow With Us", "domain": "growwithus.us"}])
+    import sqlite3
+    with sqlite3.connect(state.db_path) as db:
+        names = dict(db.execute("SELECT domain, name FROM companies"))
+    assert names["managementharbor.com"] == "Management Harbor"
+    assert names["birchmgt.com"] == "Birch Management"   # already right: untouched
+    assert names["growwithus.us"] == "Grow Community Management"   # was domain-derived
