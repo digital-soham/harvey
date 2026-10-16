@@ -1250,36 +1250,85 @@ async def set_signals_status(request: Request):
         return JSONResponse({"success": False, "message": str(e)}, status_code=500)
 
 
+COHORT_PAGE_SIZE = 50
+COHORT_MAX_PAGE_SIZE = 200
+# A cohort bigger than this is a query to narrow, not a list to page through.
+COHORT_MAX = 10_000
+
+
+async def _cohort_companies(require: list[str], exclude: list[str]) -> list[dict]:
+    """Every company in the cohort, ordered by name so pages never overlap."""
+    state = _state()
+    await state.init_db()
+    ids = await state.cohort(require, exclude, limit=COHORT_MAX)
+    rows: list[dict] = []
+    # Chunked: older SQLite builds cap a statement at 999 bound variables.
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        rows += await query_db(
+            "SELECT id, name, domain, website, industry, location FROM companies "
+            f"WHERE id IN ({','.join('?' for _ in chunk)})",
+            tuple(chunk),
+        )
+    rows.sort(key=lambda r: ((r.get("name") or "").lower(), r["id"]))
+    return rows
+
+
+def _codes(raw) -> list[str]:
+    """Signal codes from a JSON list or a comma-separated query string."""
+    if isinstance(raw, str):
+        raw = raw.split(",")
+    return [c.strip() for c in (raw or []) if c and c.strip()]
+
+
 @app.post("/api/cohort")
 async def preview_cohort(request: Request):
     """How many companies carry ALL these signals and none of those.
 
     The payoff for confirming signals: a cohort is a query, not a list. Set
     intersection happens in SQL — intersecting in JS over a capped fetch
-    silently returns the wrong answer.
+    silently returns the wrong answer. ``offset``/``limit`` page through the
+    matches; ``size`` is always the whole cohort.
     """
     try:
         body = await request.json()
-        require = [c for c in (body.get("require") or []) if c]
-        exclude = [c for c in (body.get("exclude") or []) if c]
+        require = _codes(body.get("require"))
+        exclude = _codes(body.get("exclude"))
+        offset = max(0, int(body.get("offset") or 0))
+        limit = min(max(1, int(body.get("limit") or COHORT_PAGE_SIZE)),
+                    COHORT_MAX_PAGE_SIZE)
         if not require:
-            return {"size": 0, "companies": []}
+            return {"size": 0, "offset": 0, "limit": limit, "companies": []}
 
-        state = _state()
-        await state.init_db()
-        ids = await state.cohort(require, exclude, limit=1000)
-        if not ids:
-            return {"size": 0, "companies": []}
-
-        placeholders = ",".join("?" for _ in ids[:200])
-        rows = await query_db(
-            f"SELECT id, name, domain, industry, location FROM companies "
-            f"WHERE id IN ({placeholders})",
-            tuple(ids[:200]),
-        )
-        return {"size": len(ids), "companies": rows}
+        rows = await _cohort_companies(require, exclude)
+        return {"size": len(rows), "offset": offset, "limit": limit,
+                "companies": rows[offset:offset + limit]}
     except Exception as e:
         return JSONResponse({"size": 0, "companies": [], "error": str(e)}, status_code=500)
+
+
+@app.get("/api/cohort.csv")
+async def export_cohort(require: str = "", exclude: str = ""):
+    """The whole cohort as a CSV download — every match, not just one page."""
+    import csv
+    import io
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["name", "domain", "website", "industry", "location"])
+    try:
+        codes = _codes(require)
+        if codes:
+            for r in await _cohort_companies(codes, _codes(exclude)):
+                writer.writerow([r.get(k) or "" for k in
+                                 ("name", "domain", "website", "industry", "location")])
+    except Exception as e:
+        logger.warning("Cohort export failed: %s", e)
+    return PlainTextResponse(
+        buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="cohort.csv"'},
+    )
 
 
 @app.get("/api/runs")

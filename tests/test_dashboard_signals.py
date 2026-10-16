@@ -143,6 +143,63 @@ def test_cohort_is_a_set_intersection(client):
     assert excluded["companies"][0]["name"] == "Alpha Roofing"
 
 
+async def _seed_large_cohort(db_path, n):
+    state = StateManager(str(db_path))
+    await state.init_db()
+    from harvey.signals import seed_signal_catalog
+    await seed_signal_catalog(state)
+    from harvey.models import Company
+
+    ids = [await state.add_company(Company(name=f"Co {i:03d}", domain=f"co{i:03d}.com"))
+           for i in range(n)]
+    await state.add_observations([
+        {"company_id": cid, "signal_code": "RUNNING_GOOGLE_ADS", "value_num": 1}
+        for cid in ids
+    ])
+
+
+def test_cohort_pages_through_every_match(client):
+    """Past the first page used to be unreachable: 147 matches showed 50."""
+    import asyncio
+    asyncio.run(_seed_large_cohort(client.db_path, 120))
+
+    seen = []
+    for offset in (0, 50, 100):
+        page = client.post("/api/cohort", json={
+            "require": ["RUNNING_GOOGLE_ADS"], "offset": offset, "limit": 50}).json()
+        assert page["size"] == 120
+        assert page["offset"] == offset
+        seen += [c["name"] for c in page["companies"]]
+
+    assert len(seen) == 120
+    assert len(set(seen)) == 120, "pages must not overlap"
+    assert seen == sorted(seen), "pages are in a stable order"
+
+
+def test_cohort_page_size_is_capped(client):
+    import asyncio
+    asyncio.run(_seed_large_cohort(client.db_path, 3))
+    page = client.post("/api/cohort", json={
+        "require": ["RUNNING_GOOGLE_ADS"], "limit": 100000}).json()
+    assert page["limit"] == dash.COHORT_MAX_PAGE_SIZE
+
+
+def test_cohort_csv_exports_the_whole_cohort(client):
+    import asyncio
+    asyncio.run(_seed_large_cohort(client.db_path, 120))
+    r = client.get("/api/cohort.csv", params={"require": "RUNNING_GOOGLE_ADS"})
+    assert r.status_code == 200
+    assert "text/csv" in r.headers["content-type"]
+    lines = r.text.strip().splitlines()
+    assert lines[0] == "name,domain,website,industry,location"
+    assert len(lines) == 121  # header + every match, not one page
+
+
+def test_cohort_csv_with_no_requirements_is_header_only(client):
+    r = client.get("/api/cohort.csv")
+    assert r.text.strip() == "name,domain,website,industry,location"
+
+
 def test_cohort_with_no_requirements_is_empty_not_everything(client):
     """An empty cohort must never mean 'select all' — that would silently
     turn a mis-click into a campaign against the entire database."""

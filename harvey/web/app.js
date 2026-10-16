@@ -582,6 +582,8 @@ function renderDiscoverResult(report, running) {
 // ── Cohort builder: a prospect list is a query ──
 
 let _cohort = { require: new Set(), exclude: new Set() };
+let _cohortOffset = 0;
+const COHORT_PAGE = 50;
 
 function renderCohortBuilder() {
   const el = document.getElementById('cohort-builder');
@@ -620,6 +622,7 @@ function toggleCohort(key, code, on) {
   // A company can't be both required and excluded on the same signal.
   const other = key === 'require' ? 'exclude' : 'require';
   if (on) _cohort[other].delete(code);
+  _cohortOffset = 0;  // a new cohort starts on its first page
   runCohort();
   renderCohortBuilder();
 }
@@ -633,7 +636,8 @@ async function runCohort() {
   const data = await api('/api/cohort', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({require: require, exclude: exclude}),
+    body: JSON.stringify({require: require, exclude: exclude,
+                          offset: _cohortOffset, limit: COHORT_PAGE}),
   });
   if (!data) { el.innerHTML = ''; return; }
 
@@ -643,23 +647,44 @@ async function runCohort() {
       (data.size === 1 ? 'y matches' : 'ies match') + ' this cohort right now</div>';
 
   if (data.companies && data.companies.length) {
+    const qs = 'require=' + encodeURIComponent(require.join(',')) +
+      '&exclude=' + encodeURIComponent(exclude.join(','));
     html += '<div class="table-card" style="margin-top:16px"><table><thead><tr>' +
       '<th>Company</th><th>Domain</th><th>Industry</th><th>Location</th>' +
       '</tr></thead><tbody>' +
-      data.companies.slice(0, 50).map(c =>
+      data.companies.map(c =>
         '<tr><td>' + escHtml(c.name) + '</td><td class="muted">' + escHtml(c.domain) + '</td>' +
         '<td class="muted">' + escHtml(c.industry) + '</td>' +
         '<td class="muted">' + escHtml(c.location) + '</td></tr>'
       ).join('') + '</tbody></table></div>';
-    if (data.size > 50) {
-      html += '<p class="muted" style="font-size:12px;margin-top:10px">Showing the first 50.</p>';
-    }
+
+    const first = data.offset + 1, last = data.offset + data.companies.length;
+    const hasPrev = data.offset > 0, hasNext = last < data.size;
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-top:10px">' +
+      '<span class="muted" style="font-size:12px">Showing ' + first + '&ndash;' + last +
+        ' of ' + data.size + '</span>' +
+      '<span style="flex:1"></span>' +
+      '<button class="btn btn-secondary btn-sm" onclick="pageCohort(-1)"' +
+        (hasPrev ? '' : ' disabled') + '>Prev</button>' +
+      '<button class="btn btn-secondary btn-sm" onclick="pageCohort(1)"' +
+        (hasNext ? '' : ' disabled') + '>Next</button>' +
+      '<a class="btn btn-secondary btn-sm" href="/api/cohort.csv?' + qs + '" download>Export CSV</a>' +
+      '</div>';
   } else if (data.size === 0) {
     html += '<p class="muted" style="font-size:13px;margin-top:12px">' +
       'No company carries all of those yet. Either loosen the cohort, or run ' +
       'prospecting to collect more.</p>';
+  } else if (_cohortOffset > 0) {
+    // The cohort shrank under us (a re-profile, a delete): back to page one.
+    _cohortOffset = 0;
+    return runCohort();
   }
   el.innerHTML = html + '</div>';
+}
+
+function pageCohort(dir) {
+  _cohortOffset = Math.max(0, _cohortOffset + dir * COHORT_PAGE);
+  runCohort();
 }
 
 // ── Settings ──
