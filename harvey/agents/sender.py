@@ -389,10 +389,22 @@ class Sender:
                 continue
             seen_emails.add(email)
 
+            # Under rotation, drafts are written days ahead: count follow-up
+            # delays from the region's next send window, not from staging.
+            anchor = now
+            sched = getattr(self.config, "schedule", None)
+            if sched is not None and getattr(sched, "enabled", False):
+                company = (await self.state.get_company(prospect.company_id)
+                           if prospect.company_id else None)
+                region = await schedule.region_of(self.state, prospect, company, sched)
+                opens = schedule.next_window_open(sched, region)
+                if opens:
+                    anchor = max(now, opens.replace(tzinfo=None))
+
             cumulative_days = 0
             for step in campaign.sequence:
                 cumulative_days += max(0, step.delay_days)
-                send_at = now + timedelta(days=cumulative_days)
+                send_at = anchor + timedelta(days=cumulative_days)
                 item_id = await self.state.add_outbox_item(
                     prospect_id=prospect.id,
                     campaign_id=campaign.id,

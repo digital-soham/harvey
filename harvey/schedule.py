@@ -87,24 +87,38 @@ def todays_regions(schedule, now: datetime | None = None) -> list[str]:
             if is_region_day(schedule, r, now) and _local(schedule.regions[r], now).time() <= end]
 
 
+def next_window_open(schedule, region: str, now: datetime | None = None) -> datetime | None:
+    """UTC start of this region's next send window (or the open one now)."""
+    cfg = schedule.regions.get(region)
+    if not cfg:
+        return None
+    start, end = _window(schedule)
+    for offset in range(0, 8):
+        local = _local(cfg, now) + timedelta(days=offset)
+        if schedule.weekdays.get(WEEKDAYS[local.weekday()]) != region:
+            continue
+        if offset == 0 and local.time() > end:
+            continue
+        opens = local.replace(hour=start.hour, minute=start.minute, second=0, microsecond=0)
+        return opens.astimezone(timezone.utc)
+    return None
+
+
+def next_send_day(schedule, now: datetime | None = None) -> tuple[str, str]:
+    """(region, its local YYYY-MM-DD) for the send window that opens soonest."""
+    best = None
+    for region, cfg in schedule.regions.items():
+        opens = next_window_open(schedule, region, now)
+        if opens and (best is None or opens < best[0]):
+            best = (opens, region, opens.astimezone(pytz.timezone(cfg.timezone)).strftime("%Y-%m-%d"))
+    if not best:
+        return next(iter(schedule.regions), ""), _now(now).strftime("%Y-%m-%d")
+    return best[1], best[2]
+
+
 def next_region(schedule, now: datetime | None = None) -> str:
     """The region whose next send window opens soonest (or is open now)."""
-    start, end = _window(schedule)
-    now = _now(now)
-    for offset in range(0, 8):
-        best = None
-        for region, cfg in schedule.regions.items():
-            local = _local(cfg, now) + timedelta(days=offset)
-            if schedule.weekdays.get(WEEKDAYS[local.weekday()]) != region:
-                continue
-            if offset == 0 and local.time() > end:
-                continue
-            opens = local.replace(hour=start.hour, minute=start.minute, second=0, microsecond=0)
-            if best is None or opens.astimezone(timezone.utc) < best[0]:
-                best = (opens.astimezone(timezone.utc), region)
-        if best:
-            return best[1]
-    return next(iter(schedule.regions), "")
+    return next_send_day(schedule, now)[0]
 
 
 def is_rest_day(schedule, tz_name: str, now: datetime | None = None) -> bool:
@@ -171,9 +185,14 @@ async def ready_by_region(state, schedule) -> dict[str, int]:
     return counts
 
 
-def written_key(regions: list[str], now: datetime | None = None) -> str:
-    """Settings key counting researched sequences written for today's region."""
-    return f"deep_written:{_now(now):%Y-%m-%d}:{'+'.join(regions)}"
+def written_key(schedule, now: datetime | None = None) -> str:
+    """Settings key counting researched sequences written for the next send day.
+
+    Drafts are written ahead, as soon as people are ready, so they sit in the
+    Outbox for approval before that region's window opens.
+    """
+    region, day = next_send_day(schedule, now)
+    return f"deep_written:{day}:{region}"
 
 
 async def region_of(state, prospect, company, schedule, fetch: bool = True) -> str:

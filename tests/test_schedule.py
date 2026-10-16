@@ -54,6 +54,16 @@ def test_rotation_follows_weekdays_in_each_regions_timezone():
     assert schedule.next_region(s, SAT_NOON) == "us"  # Monday
 
 
+def test_drafts_are_keyed_to_the_next_send_day():
+    s = _sched()
+    FRI_AFTER_UK = datetime(2026, 10, 23, 14, 0, tzinfo=timezone.utc)
+    assert schedule.next_send_day(s, FRI_AFTER_UK) == ("us", "2026-10-26")  # Monday
+    assert schedule.written_key(s, SAT_NOON) == "deep_written:2026-10-26:us"
+    assert schedule.next_send_day(s, MON_930_NY) == ("us", "2026-10-19")  # window open now
+    opens = schedule.next_window_open(s, "uk", MON_930_NY)
+    assert opens == datetime(2026, 10, 20, 8, 0, tzinfo=timezone.utc)  # Tue 09:00 London
+
+
 def test_window_closes():
     s = _sched()
     assert not schedule.is_sending_now(s, "us", MON_930_NY + timedelta(hours=3))

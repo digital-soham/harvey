@@ -86,6 +86,9 @@ class FakeState:
     async def get_setting(self, key, default=""):
         return self.settings.get(key, default)
 
+    async def set_setting(self, key, value):
+        self.settings[key] = value
+
     async def increment_setting(self, key, by=1):
         self.settings[key] = str(int(self.settings.get(key, "0")) + by)
         return int(self.settings[key])
@@ -133,6 +136,24 @@ async def test_deep_mode_quota_and_no_hook(monkeypatch):
 
     await w._run_deep([_prospect("c", 10)])  # quota used: nothing more today
     assert "c" not in state.statuses
+
+
+@pytest.mark.asyncio
+async def test_deep_mode_writes_one_person_per_company(monkeypatch):
+    state = FakeState()
+    w = _writer(state, max_daily_sends=9)
+    step = writer_mod.EmailStep(step=1, subject="s", body="b", delay_days=0)
+
+    async def fake_research(prospect):
+        return [step], ""
+
+    monkeypatch.setattr(w, "_write_researched_sequence", fake_research)
+    ceo, sales = _prospect("ceo", 0), _prospect("sales", 0)
+    ceo.company = sales.company = "Acme"
+    ceo.title, sales.title = "President", "Director of Business Development"
+    await w._run_deep([sales, ceo, _prospect("other", 0)])
+
+    assert state.statuses == {"ceo": "queued", "sales": "colleague_contacted", "other": "queued"}
 
 
 # ── Claude CLI resolution ──────────────────────────────────────────

@@ -98,6 +98,29 @@ def _write_env_file(updates: dict[str, str]):
     load_dotenv(str(ENV_FILE), override=True)
 
 
+def _pid_alive(pid: int) -> bool:
+    """True if a process with this PID exists. Never signals it.
+
+    On Windows os.kill(pid, 0) calls TerminateProcess, so it would kill Harvey.
+    """
+    if sys.platform == "win32":
+        import ctypes
+        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        code = ctypes.c_ulong()
+        ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return code.value == 259  # STILL_ACTIVE
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 def _check_harvey_pid() -> int | None:
     """Check if there's a running Harvey process from a PID file."""
     global _harvey_process, _harvey_started_at
@@ -106,10 +129,11 @@ def _check_harvey_pid() -> int | None:
     if PID_FILE.exists():
         try:
             pid = int(PID_FILE.read_text().strip())
-            os.kill(pid, 0)  # Check if process exists
-            return pid
-        except (ValueError, ProcessLookupError, PermissionError):
-            PID_FILE.unlink(missing_ok=True)
+            if _pid_alive(pid):
+                return pid
+        except ValueError:
+            pass
+        PID_FILE.unlink(missing_ok=True)
     return None
 
 
@@ -124,7 +148,8 @@ async def get_setup_status():
     # 1. Venv
     checks.append({
         "id": "venv", "label": "Python virtual environment",
-        "done": (PROJECT_ROOT / ".venv").is_dir(),
+        # A project .venv, or any isolated install (uv tool, pipx) running this dashboard.
+        "done": (PROJECT_ROOT / ".venv").is_dir() or sys.prefix != sys.base_prefix,
         "required": True,
         "help": "Run: python3 -m venv .venv && source .venv/bin/activate && pip install -e .",
     })
@@ -448,7 +473,7 @@ async def start_harvey():
         log_handle = open(LOG_FILE, "a")
         try:
             _harvey_process = subprocess.Popen(
-                [sys.executable, "-m", "harvey"],
+                [sys.executable, "-m", "harvey", "run"],
                 cwd=str(PROJECT_ROOT),
                 stdout=log_handle,
                 stderr=log_handle,
@@ -484,15 +509,13 @@ async def stop_harvey():
         os.kill(pid, signal.SIGTERM)
         # Wait briefly for graceful shutdown
         for _ in range(10):
-            try:
-                os.kill(pid, 0)
-                await asyncio.sleep(0.5)
-            except ProcessLookupError:
+            if not _pid_alive(pid):
                 break
+            await asyncio.sleep(0.5)
         else:
             # Force kill if still running
             try:
-                os.kill(pid, signal.SIGKILL)
+                os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))  # no SIGKILL on Windows
             except (ProcessLookupError, PermissionError):
                 pass
     except (ProcessLookupError, PermissionError):

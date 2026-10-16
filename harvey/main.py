@@ -115,14 +115,13 @@ async def decide_scheduled_action(state: StateManager, config: HarveyConfig, sum
     """Region-rotation priorities (schedule.enabled):
 
     handle_replies > send_campaign > review_followups (rest days) >
-    write_campaign (today's region, quota left, prospects ready) >
+    write_campaign (next region, quota left, prospects ready) >
     prospect (next region's pool is low) > idle.
     """
     from harvey import schedule
     from harvey.agents.followups import FollowupReviewer
 
     sched = config.schedule
-    regions = schedule.todays_regions(sched)
 
     if (summary.get("open_conversations", 0) or 0) > 0:
         action, reason = "handle_replies", "open conversation(s) waiting"
@@ -133,10 +132,10 @@ async def decide_scheduled_action(state: StateManager, config: HarveyConfig, sum
         action, reason = "review_followups", "rest day: reviewing next week's follow-ups"
     else:
         ready = await schedule.ready_by_region(state, sched)
-        written = int(await state.get_setting(schedule.written_key(regions), "0") or 0) if regions else 0
+        written = int(await state.get_setting(schedule.written_key(sched), "0") or 0)
         upcoming = schedule.next_region(sched)
-        if regions and written < sched.max_daily_new and any(ready.get(r) for r in regions):
-            action, reason = "write_campaign", f"{'+'.join(regions)} day: {written}/{sched.max_daily_new} researched"
+        if written < sched.max_daily_new and ready.get(upcoming):
+            action, reason = "write_campaign", f"drafting ahead for {upcoming}: {written}/{sched.max_daily_new} researched"
         elif ready.get(upcoming, 0) < sched.max_daily_new * 2:
             action, reason = "prospect", f"only {ready.get(upcoming, 0)} ready for next region ({upcoming})"
         else:

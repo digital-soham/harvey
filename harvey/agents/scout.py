@@ -146,8 +146,11 @@ class Scout:
         # Job boards first: hiring is the strongest intent signal, and the
         # strategy self-skips when python-jobspy isn't installed.
         strategies.append(("hiring_boards", self._prospect_via_hiring_boards))
-        strategies.append(("profile_search", self._prospect_via_profile_search))
+        # Company discovery before profile search: they share the per-cycle
+        # query budget, and only companies lead to a domain, so to an email.
+        # Profile search alone often yields names with no company to mail.
         strategies.append(("company_discovery", self._prospect_via_company_discovery))
+        strategies.append(("profile_search", self._prospect_via_profile_search))
 
         for name, strategy in strategies:
             try:
@@ -357,7 +360,8 @@ class Scout:
         resp = await self._fetch(
             "https://google.serper.dev/search",
             method="POST",
-            json_body={"q": query, "num": MAX_RESULTS_PER_QUERY},
+            # Free Serper accounts reject operator queries (site:, quotes) above 10 results.
+            json_body={"q": query, "num": min(MAX_RESULTS_PER_QUERY, 10)},
             headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
             retries=2,
         )

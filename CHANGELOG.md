@@ -25,9 +25,12 @@ minor versions can still change behaviour.
   as `no_hook` instead of getting a generic template. Researches
   `max_daily_sends // 3` people a day.
 - **Region rotation** (`schedule.enabled`). Each weekday belongs to one
-  region (default Mon US, Tue UK, Wed Europe, Thu US, Fri UK). On a region's
-  day Harvey researches its best-scoring prospects (`max_daily_new`) and
-  sends only inside the recipient's local morning (`send_window_start/end`).
+  region (default Mon US, Tue UK, Wed Europe, Thu US, Fri UK). Harvey drafts
+  ahead for the next region's day as soon as prospects are ready, so drafts
+  wait in the Outbox for approval; it researches the best-scoring prospects
+  (`max_daily_new`, one person per company, most senior first) and sends only
+  inside the recipient's local morning (`send_window_start/end`). Sequence
+  delays count from that window, not from when the draft was written.
   Prospects are tagged by recorded location, country TLD, then a free scan of
   their homepage/contact page, cached per company. Scout searches the next
   sending region's geography and only when that region's ready pool is low.
@@ -40,6 +43,21 @@ minor versions can still change behaviour.
 
 ### Fixed
 
+- **Serper: no results on free accounts.** Free Serper keys reject operator
+  queries (`site:`, quotes) asking for more than 10 results with a 400, so
+  every scout search failed. Requests now ask for at most 10.
+- **Scout spent its whole query budget on profile search.** Company
+  discovery now runs first: it leads to a domain and an email, while profile
+  search often yields names with no company to mail.
+- **Dashboard killed Harvey on Windows.** The PID liveness check used
+  `os.kill(pid, 0)`, which is `TerminateProcess` on Windows. It now opens
+  the process read-only instead.
+- **Dashboard Start button only printed help.** It ran `python -m harvey`
+  without `run`.
+- **Setup checklist demanded a `.venv`** even when Harvey runs from an
+  isolated install (`uv tool`, pipx).
+- **Outbox looked full of duplicates.** The review list and "Didn't send"
+  table now show each row's step (and subject).
 - **Windows: Claude CLI not found.** npm installs a `claude.cmd` shim that
   `create_subprocess_exec` can't launch; Harvey now runs the native
   `claude.exe` it wraps (never the shim, so prompts don't pass through cmd.exe).

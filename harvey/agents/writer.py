@@ -9,6 +9,7 @@ Steps 2-3 stay campaign-level (proof point + breakup are less personal by
 design). Every draft still passes the deterministic pre-send gate.
 """
 
+import re
 import json
 import logging
 from datetime import datetime, timezone
@@ -31,6 +32,21 @@ LEGACY_BATCH_CAP = 50
 DEEP_SEQUENCE_LENGTH = 3
 DEEP_WORD_LIMITS = (80, 80, 45)  # the prompt asks for 75/75/40; slack for a sign-off
 DEEP_ATTEMPTS_PER_SLOT = 3       # rejected prospects a day per sequence written
+COMPANY_CONTACT_PREFIX = "company_contacted:"
+SENIOR_TITLES = re.compile(r"\b(co-?founder|founder|owner|ceo|chief|president|"
+                           r"managing (director|partner)|cto)\b")
+
+
+def _company_key(prospect) -> str:
+    return (getattr(prospect, "company_id", "")
+            or (getattr(prospect, "company", "") or "").strip().lower()
+            or (getattr(prospect, "email", "") or "").rpartition("@")[2].lower())
+
+
+def _priority(prospect) -> tuple:
+    """Best score first; on a tie, the most senior person at the company."""
+    title = (getattr(prospect, "title", "") or "").lower()
+    return (getattr(prospect, "score", 0) or 0, bool(SENIOR_TITLES.search(title)))
 
 
 class Writer:
@@ -272,21 +288,19 @@ Return ONLY JSON: {{"subject": "...", "body": "..."}}"""
         quota = max(1, self.config.channels.email.max_daily_sends // DEEP_SEQUENCE_LENGTH)
         sched = getattr(self.config, "schedule", None)
         if sched is not None and sched.enabled:
-            # Region rotation: only today's region, its own daily quota.
-            regions = schedule.todays_regions(sched)
-            if not regions:
-                logger.info("Writer: no region's sending day right now; nothing to write.")
-                return
+            # Region rotation: write ahead for the next send day's region,
+            # its own quota, so drafts wait in the Outbox for approval.
+            region = schedule.next_region(sched)
             quota = sched.max_daily_new
-            today = schedule.written_key(regions).removeprefix("deep_written:")
+            today = schedule.written_key(sched).removeprefix("deep_written:")
             kept = []
             for p in prospects:
                 company = await self.state.get_company(p.company_id) if p.company_id else None
-                if await schedule.region_of(self.state, p, company, sched) in regions:
+                if await schedule.region_of(self.state, p, company, sched) == region:
                     kept.append(p)
             prospects = kept
             if not prospects:
-                logger.info(f"Writer: no ready prospects for today's region ({', '.join(regions)}).")
+                logger.info(f"Writer: no ready prospects for the next region ({region}).")
                 return
         written_key, tried_key = f"deep_written:{today}", f"deep_tried:{today}"
         written = int(await self.state.get_setting(written_key, "0") or 0)
@@ -295,9 +309,15 @@ Return ONLY JSON: {{"subject": "...", "body": "..."}}"""
             logger.info(f"Writer: today's researched quota is used ({written}/{quota} written).")
             return
 
-        for prospect in sorted(prospects, key=lambda p: p.score or 0, reverse=True):
+        for prospect in sorted(prospects, key=_priority, reverse=True):
             if written >= quota or tried >= quota * DEEP_ATTEMPTS_PER_SLOT:
                 break
+            # One person per company: colleagues compare notes, and near-identical
+            # emails to three people at one firm read as a blast.
+            company_key = COMPANY_CONTACT_PREFIX + _company_key(prospect)
+            if await self.state.get_setting(company_key, ""):
+                await self.state.update_prospect_status(prospect.id, "colleague_contacted")
+                continue
             tried = await self.state.increment_setting(tried_key)
             try:
                 sequence, reason = await self._write_researched_sequence(prospect)
@@ -322,6 +342,7 @@ Return ONLY JSON: {{"subject": "...", "body": "..."}}"""
                 status="draft",
             ))
             await self.state.update_prospect_status(prospect.id, "queued")
+            await self.state.set_setting(company_key, prospect.id)
             written = await self.state.increment_setting(written_key)
             await self.state.log_action(
                 action_type="write_campaign", agent="writer",

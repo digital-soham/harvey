@@ -1097,7 +1097,8 @@ async function loadOutbox() {
       ['Sent', r => formatDate(r.sent_at), true],
     ]) +
     table('Didn\'t send', data.failed, [
-      ['To', r => r.to_email], ['Status', r => badge(r.status), false, true],
+      ['To', r => r.to_email], ['Step', r => r.step], ['Subject', r => r.subject],
+      ['Status', r => badge(r.status), false, true],
       ['Reason', r => r.error, true], ['Updated', r => formatDate(r.updated_at), true],
     ]);
 }
@@ -1107,7 +1108,8 @@ function renderDesk(items, i) {
   const rail = items.map((it, n) =>
     '<div class="desk-item ' + (n === i ? 'active' : '') + '" onclick="deskGo(' + n + ')">' +
       '<div class="to">' + escHtml(it.to_email) + '</div>' +
-      '<div class="sub">' + escHtml(it.subject || '(no subject)') + '</div>' +
+      '<div class="sub">Email ' + escHtml(String(it.step || 1)) + ' &middot; ' +
+        escHtml(it.subject || '(no subject)') + '</div>' +
     '</div>').join('');
 
   return '<div class="desk">' +
