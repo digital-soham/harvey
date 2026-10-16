@@ -596,7 +596,7 @@ class SetupWizard:
         """Write the .env file, preserving any existing variables we didn't touch."""
         existing: dict[str, str] = {}
         if ENV_FILE.exists():
-            for line in ENV_FILE.read_text().splitlines():
+            for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     key, _, value = line.partition("=")
@@ -610,7 +610,7 @@ class SetupWizard:
                 merged[key] = value
 
         lines = [f"{key}={value}" for key, value in merged.items()]
-        ENV_FILE.write_text("\n".join(lines) + "\n")
+        ENV_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
         try:
             ENV_FILE.chmod(0o600)  # credentials — owner read/write only
         except OSError:

@@ -104,7 +104,7 @@ def _capture_exec(monkeypatch):
 async def test_default_brain_runs_claude_without_model_flag(state, monkeypatch):
     captured = _capture_exec(monkeypatch)
     assert await Brain(state).think("hi") == "ok"
-    assert captured["cmd"][0] == "claude"
+    assert Path(captured["cmd"][0]).stem == "claude"
     assert "--model" not in captured["cmd"]
     assert await state.get_usage_today("claude") == 1
     assert await state.get_usage_today("codex") == 0

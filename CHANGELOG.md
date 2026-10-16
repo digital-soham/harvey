@@ -5,6 +5,35 @@ Notable changes to Harvey. Dates are release dates; the format follows
 follow [semver](https://semver.org/), with the caveat that Harvey is pre-1.0 and
 minor versions can still change behaviour.
 
+## [Unreleased]
+
+### Added
+
+- **`harvey warmup` — deliverability readiness check.** Checks the sending
+  domain's MX, SPF (including `+all` and the 10-lookup limit), DKIM (common
+  selectors or `warmup.dkim_selector`), DMARC, domain age via RDAP, domain
+  and sending-IP DNS blocklists, warmup progress and bounce rate, then prints
+  a NOT READY / READY WITH CAVEATS / READY verdict. Exits non-zero on any FAIL.
+- **Warmup send ramp.** `channels.email.warmup.start_date` holds all cold
+  email for `min_days`, then the daily cap climbs from `start_sends` by
+  `daily_increase` up to `max_daily_sends`. No start date = old behaviour.
+- **Deep research mode** (`channels.email.deep_research: true`, native
+  providers). Per prospect: reads their website (about/services/work/blog/
+  careers) and, with a Serper key, their past-year news and public footprint;
+  writes all 3 emails for that person; a second editor pass strikes anything
+  the research doesn't support. Prospects without a specific hook are parked
+  as `no_hook` instead of getting a generic template. Researches
+  `max_daily_sends // 3` people a day.
+
+### Fixed
+
+- **Windows: Claude CLI not found.** npm installs a `claude.cmd` shim that
+  `create_subprocess_exec` can't launch; Harvey now runs the native
+  `claude.exe` it wraps (never the shim, so prompts don't pass through cmd.exe).
+- **Windows: UTF-8 file I/O.** Prompts, skills, config, `.env` and trainer
+  output were read/written in the locale codepage, crashing `harvey train` on
+  characters like `★` and garbling `—` in prompts.
+
 ## [0.3.0] — 2026-10-13
 
 ### Added

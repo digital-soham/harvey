@@ -3,7 +3,7 @@
 import logging
 import os
 import re
-from datetime import time as _time
+from datetime import date as _date, time as _time
 from pathlib import Path
 
 import yaml
@@ -68,6 +68,55 @@ class ICPConfig(BaseModel):
     geo_coordinates: dict[str, str] = {}
 
 
+class WarmupConfig(BaseModel):
+    """Sending-volume ramp for a new domain/mailbox.
+
+    Harvey doesn't run a warmup network itself — that needs a pool of real
+    inboxes (Instantly, Lemwarm, Mailreach...). This is the other half: no
+    cold email goes out until the mailbox has warmed for ``min_days``, then
+    the daily cap climbs from ``start_sends`` by ``daily_increase`` per day
+    until it reaches ``max_daily_sends``. Empty ``start_date`` = no ramp.
+    """
+    start_date: str = ""      # YYYY-MM-DD the warmup service was switched on
+    min_days: int = 14        # warmup-only days before any cold email
+    start_sends: int = 5      # cold-email cap on the first sending day
+    daily_increase: int = 3   # added to the cap each day after that
+    dkim_selector: str = ""   # for `harvey warmup` if not a common one
+
+    @field_validator("start_date")
+    @classmethod
+    def _valid_date(cls, v: str) -> str:
+        v = (v or "").strip()
+        if v:
+            try:
+                _date.fromisoformat(v)
+            except ValueError:
+                raise ValueError(f"warmup.start_date '{v}' must be YYYY-MM-DD.")
+        return v
+
+    @field_validator("min_days", "start_sends", "daily_increase")
+    @classmethod
+    def _non_negative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("warmup values must be >= 0")
+        return v
+
+    def days_in(self, today: _date | None = None) -> int | None:
+        """Days since warmup started, or None when no ramp is configured."""
+        if not self.start_date:
+            return None
+        return ((today or _date.today()) - _date.fromisoformat(self.start_date)).days
+
+    def daily_cap(self, ceiling: int, today: _date | None = None) -> int:
+        """Today's cold-email cap under the ramp (never above ``ceiling``)."""
+        days = self.days_in(today)
+        if days is None:
+            return ceiling
+        if days < self.min_days:
+            return 0
+        return min(ceiling, self.start_sends + (days - self.min_days) * self.daily_increase)
+
+
 class EmailChannelConfig(BaseModel):
     enabled: bool = True
     # "instantly" (legacy), "gmail" (Gmail/Workspace via API — recommended),
@@ -85,6 +134,12 @@ class EmailChannelConfig(BaseModel):
     # Kill switch: pause all sending when bounces exceed this fraction of
     # sent mail (measured over the trailing sends). 0 disables the switch.
     max_bounce_rate: float = 0.05
+    warmup: WarmupConfig = WarmupConfig()
+    # Quality over volume (native providers): research each prospect's site
+    # and news, write all 3 emails per person, fact-check them, and skip
+    # anyone without a real hook. Researches max_daily_sends // 3 people a
+    # day (min 1), since each person gets a 3-email sequence.
+    deep_research: bool = False
 
     @field_validator("max_daily_sends")
     @classmethod
@@ -92,6 +147,10 @@ class EmailChannelConfig(BaseModel):
         if v < 0:
             raise ValueError("max_daily_sends must be >= 0")
         return v
+
+    def effective_daily_sends(self, today: _date | None = None) -> int:
+        """max_daily_sends, throttled by the warmup ramp when one is set."""
+        return self.warmup.daily_cap(self.max_daily_sends, today)
 
 
 class LinkedInChannelConfig(BaseModel):
@@ -257,7 +316,7 @@ def load_config(config_path: str | None = None) -> HarveyConfig:
         config_path = _find_config_file()
 
     try:
-        with open(config_path) as f:
+        with open(config_path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
     except FileNotFoundError:
         raise ConfigFileNotFoundError(
@@ -304,7 +363,7 @@ def load_brain_config(config_path: str | None = None) -> BrainConfig:
         except ConfigFileNotFoundError:
             return BrainConfig()
     try:
-        with open(config_path) as f:
+        with open(config_path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
     except FileNotFoundError:
         return BrainConfig()

@@ -38,6 +38,12 @@ BOUNCE_COUNT_KEY = "bounce_count"
 
 EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
 
+
+def _daily_cap(email_config) -> int:
+    """Today's send cap: max_daily_sends throttled by the warmup ramp."""
+    effective = getattr(email_config, "effective_daily_sends", None)
+    return effective() if callable(effective) else email_config.max_daily_sends
+
 # Only prospects in these statuses may be added as leads. This guarantees
 # we never re-send to someone already contacted, replied, opted out, or lost.
 SENDABLE_STATUSES = {"new", "queued"}
@@ -89,7 +95,7 @@ class Sender:
             return
 
         # Enforce daily send limit
-        max_sends = self.config.channels.email.max_daily_sends
+        max_sends = _daily_cap(self.config.channels.email)
         sends_today = await self._count_sends_today()
         remaining = max_sends - sends_today
         if remaining <= 0:
@@ -233,7 +239,7 @@ class Sender:
             return
 
         # Check remaining daily send budget
-        max_sends = self.config.channels.email.max_daily_sends
+        max_sends = _daily_cap(self.config.channels.email)
         sends_today = await self._count_sends_today()
         remaining = max_sends - sends_today
         if remaining <= 0:
@@ -426,10 +432,18 @@ class Sender:
             )
             return
 
-        max_daily = self.config.channels.email.max_daily_sends
+        max_daily = _daily_cap(self.config.channels.email)
         sent_today = await self.state.count_outbox_sent_today()
         budget = min(MAX_SENDS_PER_CYCLE, max_daily - sent_today)
         if budget <= 0:
+            warmup = getattr(self.config.channels.email, "warmup", None)
+            days = warmup.days_in() if warmup else None
+            if days is not None and days < warmup.min_days:
+                logger.info(
+                    f"Sender: mailbox still warming up (day {days}/{warmup.min_days}) "
+                    "— outbox is holding. See `harvey warmup`."
+                )
+                return
             logger.info(f"Sender: daily send cap reached ({sent_today}/{max_daily}).")
             return
 

@@ -11,6 +11,8 @@ import asyncio
 import json
 import logging
 import re
+import shutil
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -29,6 +31,21 @@ DEFAULT_TIMEOUT_SECONDS = 300  # a single Claude call should never hang forever
 DEFAULT_MAX_RETRIES = 2  # retries on transient failures (non-zero exit, timeout)
 RETRY_BASE_DELAY = 5.0  # seconds; doubles per attempt
 _MAX_ARGV_PROMPT_CHARS = 8000  # longer prompts go via stdin (Windows argv limit)
+
+
+def _claude_executable() -> str:
+    """Resolve the Claude CLI to a real executable.
+
+    On Windows an npm install puts a ``claude.cmd`` shim on PATH, which
+    create_subprocess_exec can't launch — and routing prompts (untrusted
+    scraped text) through cmd.exe would be unsafe anyway. Use the native
+    ``claude.exe`` the shim wraps instead.
+    """
+    found = shutil.which("claude")
+    if sys.platform != "win32" or not found or not found.lower().endswith((".cmd", ".bat")):
+        return found or "claude"
+    native = Path(found).parent / "node_modules" / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
+    return str(native) if native.exists() else "claude"
 
 # stderr fragments that indicate retrying is pointless
 _NON_RETRYABLE_PATTERNS = (
@@ -246,7 +263,7 @@ class Brain:
         # Windows caps a command line at ~32k chars and surfaces the overflow
         # as FileNotFoundError (WinError 206), so long prompts go via stdin.
         prompt_via_stdin = len(prompt) > _MAX_ARGV_PROMPT_CHARS
-        cmd = ["claude", "-p"]
+        cmd = [_claude_executable(), "-p"]
         if not prompt_via_stdin:
             cmd.append(prompt)
         cmd += [
@@ -634,7 +651,7 @@ class Brain:
         """Load a prompt template from the prompts/ directory and fill in variables."""
         prompt_file = PROMPTS_DIR / f"{prompt_name}.md"
         try:
-            template = prompt_file.read_text()
+            template = prompt_file.read_text(encoding="utf-8")
         except FileNotFoundError:
             logger.warning(f"Prompt file not found: {prompt_file}")
             return ""
@@ -655,7 +672,7 @@ class Brain:
         """Load a skill knowledge file from the skills/ directory."""
         skill_file = SKILLS_DIR / f"{skill_name}.md"
         try:
-            return skill_file.read_text()
+            return skill_file.read_text(encoding="utf-8")
         except FileNotFoundError:
             logger.warning(f"Skill file not found: {skill_file}")
             return ""

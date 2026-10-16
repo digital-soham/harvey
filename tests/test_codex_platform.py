@@ -184,7 +184,7 @@ async def test_claude_is_unaffected_on_windows(on_windows, monkeypatch, tmp_path
             return b'{"type": "result", "result": "ok", "session_id": "s"}', b""
 
     async def fake_claude(*cmd, **kwargs):
-        assert cmd[0] == "claude"
+        assert os.path.splitext(os.path.basename(cmd[0]))[0] == "claude"
         return Proc()
 
     monkeypatch.setattr(brain_mod.asyncio, "create_subprocess_exec", fake_claude)
