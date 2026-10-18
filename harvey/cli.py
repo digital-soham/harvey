@@ -489,7 +489,7 @@ def cmd_profile(args):
 def cmd_discover(args):
     """Find businesses. The only stage that spends money, so it estimates first."""
     from harvey.state import StateManager
-    from harvey.config import load_config
+    from harvey.config import load_config, load_env
     from harvey.collectors.discover import (
         PROVIDERS, build_queries, provider_menu, run_discovery,
     )
@@ -498,7 +498,7 @@ def cmd_discover(args):
         if args.providers:
             print("\n  Discovery providers")
             print("  " + "=" * 68)
-            for m in provider_menu():
+            for m in provider_menu(load_env().model_dump()):
                 mark = "ready" if m["configured"] else "needs setup"
                 print(f"\n  {m['label']}  [{m['key']}]  ({mark})")
                 print(f"    {m['blurb']}")

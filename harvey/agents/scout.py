@@ -1317,7 +1317,11 @@ Respond ONLY with the JSON array."""
     async def _scrape_team_page(self, domain: str) -> list[dict]:
         """Try to find and scrape a company's team/about page."""
         team_paths = ["/team", "/about", "/about-us", "/our-team", "/people",
-                      "/leadership", "/about/team", "/company/team", "/staff"]
+                      "/leadership", "/about/team", "/company/team", "/staff",
+                      "/equipe", "/nossa-equipe", "/nosso-time", "/time", "/sobre",
+                      "/sobre-nos", "/quem-somos", "/o-escritorio", "/escritorio",
+                      "/socios", "/profissionais", "/corpo-clinico", "/advogados",
+                      "/dentistas"]
         members = []
 
         base, _ = await self._resolve_base_url(domain)

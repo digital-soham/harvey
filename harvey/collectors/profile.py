@@ -100,7 +100,11 @@ AI_CRAWLERS = ("gptbot", "google-extended", "ccbot", "anthropic-ai", "claudebot"
                "perplexitybot", "bytespider")
 
 TEAM_PATHS = ("/team", "/about", "/about-us", "/our-team", "/staff",
-              "/leadership", "/meet-the-team", "/company/team")
+              "/leadership", "/meet-the-team", "/company/team",
+              "/equipe", "/nossa-equipe", "/nosso-time", "/time", "/sobre",
+              "/sobre-nos", "/quem-somos", "/o-escritorio", "/escritorio",
+              "/socios", "/profissionais", "/corpo-clinico", "/advogados",
+              "/dentistas")
 CAREERS_PATHS = ("/careers", "/jobs", "/join-us", "/employment", "/hiring",
                  "/about/careers", "/careers/")
 CONTACT_PATHS = ("/contact", "/contact-us", "/get-a-quote", "/free-estimate",
