@@ -376,3 +376,88 @@ async def test_unexpected_optional_field_shapes_are_ignored(state):
     assert result.verdict == "consent_needed"
     assert result.reason == ""
     assert result.receipt_id == ""
+
+
+# ── allowance messages ──
+
+
+def mock_status(status, body):
+    """A Precleared stand-in that answers every request with one status and body."""
+    return httpx.MockTransport(lambda request: httpx.Response(status, json=body))
+
+
+@pytest.mark.asyncio
+async def test_keyless_daily_limit_points_to_a_free_key(state):
+    client = PreclearedClient("GB", transport=mock_status(429, {
+        "error": "daily_limit", "get_key_url": "https://precleared.dev/get-key",
+    }))
+
+    result = await client.clear("person@example.com", state)
+
+    assert result.held and not result.allowed
+    assert "add PRECLEARED_API_KEY" in result.reason
+    assert "precleared.dev/get-key" in result.reason
+
+
+@pytest.mark.asyncio
+async def test_key_out_of_checks_points_to_its_checkout_link_not_a_free_key(state):
+    checkout = "https://checkout.stripe.com/c/pay/cs_test_example123#fidexample"
+    client = PreclearedClient("GB", api_key="pc_live_test", transport=mock_status(402, {
+        "error": "payment_required",
+        "message": "This key has no checks left today. Buy a pack to continue.",
+        "buy_url": checkout,
+    }))
+
+    result = await client.clear("person@example.com", state)
+
+    assert result.held and not result.allowed
+    assert "pack" in result.reason
+    assert f"({checkout})" in result.reason
+    assert "add PRECLEARED_API_KEY" not in result.reason
+    # Harvey's own wording, not the API's free text.
+    assert "Buy a pack to continue" not in result.reason
+    # Nothing cached, so the next cycle asks again.
+    assert await state.get_setting(SETTINGS_PREFIX + "person@example.com") == ""
+
+
+def mock_raw(status, content):
+    """A Precleared stand-in that answers every request with raw bytes."""
+    return httpx.MockTransport(lambda request: httpx.Response(
+        status, content=content, headers={"Content-Type": "application/json"},
+    ))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("content", [
+    b"",
+    b"Payment required",
+    b"[]",
+    json.dumps({"error": "payment_required"}).encode(),
+    json.dumps({"buy_url": "http://precleared.dev/buy"}).encode(),
+    json.dumps({"buy_url": "javascript:alert(1)"}).encode(),
+    json.dumps({"buy_url": 42}).encode(),
+    json.dumps({"buy_url": "https://precleared.dev/buy\nSecond line"}).encode(),
+    json.dumps({"buy_url": "https://precleared.dev/" + "a" * 2100}).encode(),
+], ids=["empty", "plain-text", "json-list", "no-link", "http", "javascript",
+        "not-a-string", "newline", "too-long"])
+async def test_key_out_of_checks_without_a_usable_link_falls_back_to_the_buy_page(state, content):
+    client = PreclearedClient("GB", api_key="pc_live_test", transport=mock_raw(402, content))
+
+    result = await client.clear("person@example.com", state)
+
+    assert result.held and not result.allowed
+    assert "add a pack (https://precleared.dev/buy)" in result.reason
+    assert "add PRECLEARED_API_KEY" not in result.reason
+    assert await state.get_setting(SETTINGS_PREFIX + "person@example.com") == ""
+
+
+@pytest.mark.asyncio
+async def test_checkout_link_never_carries_the_api_key_into_the_reason(state):
+    client = PreclearedClient("GB", api_key="pc_live_secret123", transport=mock_status(402, {
+        "buy_url": "https://precleared.dev/buy?key=pc_live_secret123",
+    }))
+
+    result = await client.clear("person@example.com", state)
+
+    assert result.held
+    assert "pc_live_secret123" not in result.reason

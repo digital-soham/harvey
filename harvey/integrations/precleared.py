@@ -22,6 +22,8 @@ of failing it.
 
 Without an API key Precleared allows 10 checks a day; a free key
 (https://precleared.dev/get-key, PRECLEARED_API_KEY) allows 25 a day.
+Beyond that, a key draws on a prepaid pack. When a key runs out, the held
+reason gives the checkout link from Precleared's answer.
 """
 
 import hashlib
@@ -47,6 +49,9 @@ VERDICTS = {"ok_to_email", "consent_needed", "blocked", "unknown"}
 DEFINITE_VERDICTS = {"ok_to_email", "consent_needed", "blocked"}
 ADDRESS_SOURCES = ("published", "bought", "scraped", "given", "unknown")
 SENDER_COUNTRIES = ("GB", "US")
+# Where to buy more checks when a 402 answer carries no usable checkout link.
+BUY_URL = "https://precleared.dev/buy"
+MAX_BUY_URL = 2048
 
 
 @dataclass
@@ -161,11 +166,24 @@ class PreclearedClient:
             return Clearance(allowed=False, held=True,
                              reason=self._redact(f"Precleared unreachable: {e}"))
 
-        if resp.status_code in (402, 429):
+        if resp.status_code == 429:
+            # Keyless allowance used up: a free key gives this install its own.
             return Clearance(
                 allowed=False, held=True,
                 reason="Precleared daily allowance used up; add PRECLEARED_API_KEY "
                        "(free key: https://precleared.dev/get-key) or wait until tomorrow",
+            )
+        if resp.status_code == 402:
+            # The key's free checks for today are used and it has no credits left,
+            # so another key won't help: a pack (or tomorrow's allowance) will.
+            # The 402 answer carries a checkout link for this key.
+            return Clearance(
+                allowed=False, held=True,
+                reason=self._redact(
+                    "Precleared: today's free checks on your key are used and it has "
+                    f"no credits left; add a pack ({_buy_url(resp)}) "
+                    "or wait until tomorrow"
+                ),
             )
         if resp.status_code == 401:
             return Clearance(allowed=False, held=True,
@@ -205,6 +223,28 @@ class PreclearedClient:
 def _text(value) -> str:
     """A stripped string, or "" for anything that isn't one."""
     return value.strip() if isinstance(value, str) else ""
+
+
+def _buy_url(resp: httpx.Response) -> str:
+    """The checkout link from a 402 answer's ``buy_url``, or BUY_URL.
+
+    Only a plain https link of sane length is used; a missing, malformed or
+    non-JSON body falls back to Precleared's buy page.
+    """
+    try:
+        data = resp.json()
+    except ValueError:
+        return BUY_URL
+    url = data.get("buy_url") if isinstance(data, dict) else None
+    if (
+        isinstance(url, str)
+        and url.startswith("https://")
+        and len(url) <= MAX_BUY_URL
+        and url.isprintable()
+        and not any(ch.isspace() for ch in url)
+    ):
+        return url
+    return BUY_URL
 
 
 def _reason(data: dict) -> str:
