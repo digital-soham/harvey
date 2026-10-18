@@ -22,6 +22,7 @@ from fastapi.responses import (
 logger = logging.getLogger("harvey.dashboard")
 
 from harvey.paths import PROJECT_ROOT  # noqa: E402
+from harvey.i18n import tr, request_lang  # noqa: E402
 DB_PATH = PROJECT_ROOT / "data" / "harvey.db"
 ENV_FILE = PROJECT_ROOT / ".env"
 CONFIG_FILE = PROJECT_ROOT / "harvey.yaml"
@@ -117,26 +118,27 @@ def _check_harvey_pid() -> int | None:
 
 
 @app.get("/api/setup-status")
-async def get_setup_status():
+async def get_setup_status(request: Request):
     """Check what's configured and what still needs setup."""
+    lang = request_lang(request)
     checks = []
 
     # 1. Venv
     checks.append({
-        "id": "venv", "label": "Python virtual environment",
+        "id": "venv", "label": tr(lang, "Python virtual environment"),
         "done": (PROJECT_ROOT / ".venv").is_dir(),
         "required": True,
-        "help": "Run: python3 -m venv .venv && source .venv/bin/activate && pip install -e .",
+        "help": tr(lang, "Run: python3 -m venv .venv && source .venv/bin/activate && pip install -e ."),
     })
 
     # 2. Env file
     env_vars = _read_env_file()
     env_exists = ENV_FILE.exists() and bool(env_vars)
     checks.append({
-        "id": "env_file", "label": "Environment file (.env)",
+        "id": "env_file", "label": tr(lang, "Environment file (.env)"),
         "done": env_exists,
         "required": True,
-        "help": "Go to the Settings tab to enter your API keys.",
+        "help": tr(lang, "Go to the Settings tab to enter your API keys."),
     })
 
     # 3. Email provider configured (matches channels.email.provider)
@@ -148,22 +150,22 @@ async def get_setup_status():
     if provider == "gmail":
         provider_done = _has("GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET") and \
             (PROJECT_ROOT / "data" / "gmail_token.json").is_file()
-        provider_help = ("Set GMAIL_CLIENT_ID/SECRET in Settings, then run "
-                         "'harvey gmail auth' in your terminal.")
+        provider_help = tr(lang, "Set GMAIL_CLIENT_ID/SECRET in Settings, then run "
+                                 "'harvey gmail auth' in your terminal.")
     elif provider == "microsoft":
         provider_done = _has("M365_CLIENT_ID") and \
             (PROJECT_ROOT / "data" / "m365_token.json").is_file()
-        provider_help = ("Set M365_CLIENT_ID and M365_TENANT_ID in .env, then run "
-                         "'harvey microsoft auth' in your terminal.")
+        provider_help = tr(lang, "Set M365_CLIENT_ID and M365_TENANT_ID in .env, then run "
+                                 "'harvey microsoft auth' in your terminal.")
     elif provider == "smtp":
         provider_done = _has("SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD")
-        provider_help = "Enter your SMTP host, username, and password in Settings."
+        provider_help = tr(lang, "Enter your SMTP host, username, and password in Settings.")
     else:
         instantly_key = env_vars.get("INSTANTLY_API_KEY", "") or os.getenv("INSTANTLY_API_KEY", "")
         provider_done = bool(instantly_key) and instantly_key != "your_instantly_api_key_here"
-        provider_help = "Enter your Instantly API key in Settings."
+        provider_help = tr(lang, "Enter your Instantly API key in Settings.")
     checks.append({
-        "id": "email_provider", "label": f"Email provider configured ({provider})",
+        "id": "email_provider", "label": tr(lang, "Email provider configured ({provider})", provider=provider),
         "done": provider_done,
         "required": True,
         "help": provider_help,
@@ -172,11 +174,11 @@ async def get_setup_status():
     # 4. Email verification (needed for addresses to be sendable, not 'guess')
     verifier_set = _has("REOON_API_KEY") or _has("ZEROBOUNCE_API_KEY") or _has("HUNTER_API_KEY")
     checks.append({
-        "id": "verifier", "label": "Email verification key",
+        "id": "verifier", "label": tr(lang, "Email verification key"),
         "done": verifier_set,
         "required": True,
-        "help": "Add a Reoon (free 600/mo), ZeroBounce, or Hunter key in Settings — "
-                "without one, found emails stay 'guess' and are never sent.",
+        "help": tr(lang, "Add a Reoon (free 600/mo), ZeroBounce, or Hunter key in Settings — "
+                         "without one, found emails stay 'guess' and are never sent."),
     })
 
     # 5. Config valid
@@ -192,39 +194,39 @@ async def get_setup_status():
         except Exception:
             pass
     checks.append({
-        "id": "config", "label": f"Harvey configured ({config_path.name})",
+        "id": "config", "label": tr(lang, "Harvey configured ({name})", name=config_path.name),
         "done": config_valid,
         "required": True,
-        "help": "Train Harvey on your product. Use the trainer or set up manually through Claude.",
+        "help": tr(lang, "Train Harvey on your product. Use the trainer or set up manually through Claude."),
     })
 
     # 6. Product trained
     product_trained = (PROJECT_ROOT / "skills" / "product_knowledge.md").exists()
     checks.append({
-        "id": "product_trained", "label": "Product knowledge trained",
+        "id": "product_trained", "label": tr(lang, "Product knowledge trained"),
         "done": product_trained,
         "required": True,
-        "help": "Run: harvey train https://yourwebsite.com (or set up through Claude).",
+        "help": tr(lang, "Run: harvey train https://yourwebsite.com (or set up through Claude)."),
     })
 
     # 7. LinkedIn (optional)
     linkedin_email = env_vars.get("LINKEDIN_EMAIL", "") or os.getenv("LINKEDIN_EMAIL", "")
     linkedin_pass = env_vars.get("LINKEDIN_PASSWORD", "") or os.getenv("LINKEDIN_PASSWORD", "")
     checks.append({
-        "id": "linkedin", "label": "LinkedIn credentials",
+        "id": "linkedin", "label": tr(lang, "LinkedIn credentials"),
         "done": bool(linkedin_email) and bool(linkedin_pass),
         "required": False,
-        "help": "Optional. Enter your LinkedIn credentials in Settings to enable LinkedIn prospecting.",
+        "help": tr(lang, "Optional. Enter your LinkedIn credentials in Settings to enable LinkedIn prospecting."),
     })
 
     # 8. Cloudflare (optional)
     cf_id = env_vars.get("CLOUDFLARE_ACCOUNT_ID", "") or os.getenv("CLOUDFLARE_ACCOUNT_ID", "")
     cf_token = env_vars.get("CLOUDFLARE_API_TOKEN", "") or os.getenv("CLOUDFLARE_API_TOKEN", "")
     checks.append({
-        "id": "cloudflare", "label": "Cloudflare deep crawling",
+        "id": "cloudflare", "label": tr(lang, "Cloudflare deep crawling"),
         "done": bool(cf_id) and bool(cf_token),
         "required": False,
-        "help": "Optional. For JavaScript-rendered website crawling during training.",
+        "help": tr(lang, "Optional. For JavaScript-rendered website crawling during training."),
     })
 
     required_checks = [c for c in checks if c["required"]]
@@ -300,12 +302,13 @@ async def get_settings():
 @app.post("/api/settings/env")
 async def save_env_settings(request: Request):
     """Save environment variables to .env file."""
+    lang = request_lang(request)
     try:
         data = await request.json()
     except Exception:
-        return JSONResponse({"success": False, "message": "Invalid request body."}, status_code=400)
+        return JSONResponse({"success": False, "message": tr(lang, "Invalid request body.")}, status_code=400)
     if not isinstance(data, dict):
-        return JSONResponse({"success": False, "message": "Invalid request body."}, status_code=400)
+        return JSONResponse({"success": False, "message": tr(lang, "Invalid request body.")}, status_code=400)
     async with _env_lock:
         updates = {}
         for key in ["INSTANTLY_API_KEY", "LINKEDIN_EMAIL", "LINKEDIN_PASSWORD",
@@ -322,20 +325,21 @@ async def save_env_settings(request: Request):
                 _write_env_file(updates)
             except Exception as e:
                 logger.warning("Failed to write .env: %s", e)
-                return {"success": False, "message": "Could not write .env file."}
+                return {"success": False, "message": tr(lang, "Could not write .env file.")}
     return {"success": True}
 
 
 @app.post("/api/settings/test-instantly")
 async def test_instantly(request: Request):
     """Test an Instantly API key."""
+    lang = request_lang(request)
     try:
         data = await request.json()
     except Exception:
         data = {}
     api_key = str(data.get("api_key", "") or "")
     if not api_key:
-        return {"success": False, "message": "No API key provided."}
+        return {"success": False, "message": tr(lang, "No API key provided.")}
     try:
         import httpx
         async with httpx.AsyncClient(timeout=10) as client:
@@ -344,11 +348,11 @@ async def test_instantly(request: Request):
                 headers={"Authorization": f"Bearer {api_key}"},
             )
             if resp.status_code == 200:
-                return {"success": True, "message": "Connected to Instantly."}
+                return {"success": True, "message": tr(lang, "Connected to Instantly.")}
             else:
-                return {"success": False, "message": f"API returned {resp.status_code}. Check your key."}
+                return {"success": False, "message": tr(lang, "API returned {code}. Check your key.", code=resp.status_code)}
     except Exception as e:
-        return {"success": False, "message": f"Connection failed: {str(e)}"}
+        return {"success": False, "message": tr(lang, "Connection failed: {error}", error=str(e))}
 
 
 # ── Companies ──
@@ -381,6 +385,7 @@ async def get_company_contacts(company_id: str):
 @app.post("/api/feedback")
 async def add_feedback(request: Request):
     """Add a comment/feedback on any entity."""
+    lang = request_lang(request)
     try:
         data = await request.json()
     except Exception:
@@ -391,7 +396,7 @@ async def add_feedback(request: Request):
     entity_id = str(data.get("entity_id", "") or "")[:100]
     comment = str(data.get("comment", "") or "").strip()[:4000]
     if not comment:
-        return {"success": False, "message": "Comment is required."}
+        return {"success": False, "message": tr(lang, "Comment is required.")}
     feedback_id = uuid.uuid4().hex[:12]
     try:
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -413,7 +418,7 @@ async def add_feedback(request: Request):
             await db.commit()
     except Exception as e:
         logger.warning("Failed to save feedback: %s", e)
-        return {"success": False, "message": "Could not save feedback."}
+        return {"success": False, "message": tr(lang, "Could not save feedback.")}
     return {"success": True, "id": feedback_id}
 
 
@@ -439,12 +444,13 @@ async def get_harvey_status():
 
 
 @app.post("/api/harvey/start")
-async def start_harvey():
+async def start_harvey(request: Request):
     """Start Harvey's heartbeat loop as a subprocess."""
     global _harvey_process, _harvey_started_at
+    lang = request_lang(request)
 
     if _check_harvey_pid():
-        return {"success": False, "message": "Harvey is already running."}
+        return {"success": False, "message": tr(lang, "Harvey is already running.")}
 
     # Ensure data dir exists
     (PROJECT_ROOT / "data").mkdir(parents=True, exist_ok=True)
@@ -464,7 +470,7 @@ async def start_harvey():
             log_handle.close()
     except Exception as e:
         logger.warning("Failed to start Harvey: %s", e)
-        return {"success": False, "message": f"Failed to start Harvey: {e}"}
+        return {"success": False, "message": tr(lang, "Failed to start Harvey: {error}", error=e)}
     _harvey_started_at = datetime.now()
 
     # Write PID file
@@ -477,13 +483,14 @@ async def start_harvey():
 
 
 @app.post("/api/harvey/stop")
-async def stop_harvey():
+async def stop_harvey(request: Request):
     """Stop the Harvey subprocess."""
     global _harvey_process, _harvey_started_at
+    lang = request_lang(request)
 
     pid = _check_harvey_pid()
     if not pid:
-        return {"success": False, "message": "Harvey is not running."}
+        return {"success": False, "message": tr(lang, "Harvey is not running.")}
 
     try:
         os.kill(pid, signal.SIGTERM)
@@ -749,9 +756,10 @@ async def outbox_reject(item_id: str):
 
 
 @app.post("/api/sending/{action}")
-async def sending_toggle(action: str):
+async def sending_toggle(action: str, request: Request):
+    lang = request_lang(request)
     if action not in ("pause", "resume"):
-        return JSONResponse({"success": False, "message": "unknown action"}, status_code=400)
+        return JSONResponse({"success": False, "message": tr(lang, "unknown action")}, status_code=400)
     try:
         state = _state()
         await state.init_db()
@@ -854,16 +862,22 @@ def _discovery_queries(body: dict, config):
 
 
 @app.get("/api/discover/providers")
-async def get_discovery_providers():
+async def get_discovery_providers(request: Request):
     """What each source does, what it costs, and whether it's ready to use."""
+    lang = request_lang(request)
     try:
         from harvey.collectors.discover import DEFAULT_PROVIDER, provider_menu
         from harvey.config import load_env
 
         state = _state()
         await state.init_db()
+        providers = provider_menu(load_env().model_dump())
+        for p in providers:
+            for field in ("label", "blurb", "cost_note", "free_tier", "caveat"):
+                if isinstance(p.get(field), str):
+                    p[field] = tr(lang, p[field])
         return {
-            "providers": provider_menu(load_env().model_dump()),
+            "providers": providers,
             "default": DEFAULT_PROVIDER,
             "selected": await state.get_setting("discovery_provider") or DEFAULT_PROVIDER,
             "paused": await state.get_setting("discovery_paused"),
@@ -878,6 +892,7 @@ async def get_discovery_providers():
 @app.post("/api/discover/estimate")
 async def estimate_discovery(request: Request):
     """Projected spend and the exact query list, before anything is called."""
+    lang = request_lang(request)
     try:
         from harvey.collectors.discover import PROVIDERS, estimate_cost
         from harvey.config import load_config
@@ -885,7 +900,7 @@ async def estimate_discovery(request: Request):
         body = await request.json()
         provider = body.get("provider") or ""
         if provider not in PROVIDERS:
-            return JSONResponse({"error": f"unknown provider {provider!r}"},
+            return JSONResponse({"error": tr(lang, "unknown provider {provider}", provider=provider)},
                                 status_code=400)
 
         queries = _discovery_queries(body, load_config())
@@ -909,8 +924,9 @@ async def start_discovery(request: Request):
     """
     global _discovery_task, _discovery_report
 
+    lang = request_lang(request)
     if _discovery_task and not _discovery_task.done():
-        return JSONResponse({"success": False, "message": "a run is already going"},
+        return JSONResponse({"success": False, "message": tr(lang, "a run is already going")},
                             status_code=409)
     try:
         from harvey.collectors.discover import PROVIDERS
@@ -921,7 +937,7 @@ async def start_discovery(request: Request):
         provider = body.get("provider") or ""
         if provider not in PROVIDERS:
             return JSONResponse({"success": False,
-                                 "message": f"unknown provider {provider!r}"},
+                                 "message": tr(lang, "unknown provider {provider}", provider=provider)},
                                 status_code=400)
 
         config = load_config()
@@ -958,15 +974,16 @@ async def start_discovery(request: Request):
 
 
 @app.post("/api/profile/run")
-async def start_profile():
+async def start_profile(request: Request):
     """Read the websites of everything discovered but not yet looked at.
 
     Free and model-free, so there is nothing to estimate and no cap to set.
     """
     global _discovery_task, _discovery_report
+    lang = request_lang(request)
 
     if _discovery_task and not _discovery_task.done():
-        return JSONResponse({"success": False, "message": "a run is already going"},
+        return JSONResponse({"success": False, "message": tr(lang, "a run is already going")},
                             status_code=409)
     try:
         from harvey.pipeline import run_profile_stage
@@ -1009,13 +1026,14 @@ async def stop_discovery():
 
 
 @app.get("/api/today")
-async def get_today():
+async def get_today(request: Request):
     """What needs a human, right now.
 
     The dashboard opens here rather than on a setup checklist: the question a
     returning user actually has is "is anything waiting on me?", and the
     answer is usually a short list or nothing at all.
     """
+    lang = request_lang(request)
     items: list[dict] = []
     stats: dict = {}
     try:
@@ -1055,76 +1073,76 @@ async def get_today():
         if paused:
             items.append({
                 "key": "paused", "tone": "bad",
-                "title": "Sending is paused",
-                "detail": str(paused) + ". Nothing will go out until you resume it.",
-                "action": "Review and resume", "tab": "outbox",
+                "title": tr(lang, "Sending is paused"),
+                "detail": tr(lang, "{reason}. Nothing will go out until you resume it.", reason=str(paused)),
+                "action": tr(lang, "Review and resume"), "tab": "outbox",
             })
 
-        setup = await get_setup_status()
+        setup = await get_setup_status(request)
         if isinstance(setup, dict) and setup.get("percent", 100) < 100:
             missing = [c["label"] for c in setup.get("checks", [])
                        if c.get("required") and not c.get("done")]
             items.append({
                 "key": "setup", "tone": "warn",
-                "title": "Finish setting Harvey up",
-                "detail": ", ".join(missing[:3]) or "Some required steps are incomplete.",
-                "action": "Open setup", "tab": "settings",
+                "title": tr(lang, "Finish setting Harvey up"),
+                "detail": ", ".join(missing[:3]) or tr(lang, "Some required steps are incomplete."),
+                "action": tr(lang, "Open setup"), "tab": "settings",
             })
 
         if proposed:
             items.append({
                 "key": "signals", "tone": "warn",
-                "title": (f"{len(proposed)} signal waiting for your confirmation"
+                "title": (tr(lang, "{n} signal waiting for your confirmation", n=len(proposed))
                           if len(proposed) == 1
-                          else f"{len(proposed)} signals waiting for your confirmation"),
-                "detail": ("Harvey won't collect anything you haven't approved. "
+                          else tr(lang, "{n} signals waiting for your confirmation", n=len(proposed))),
+                "detail": tr(lang, "Harvey won't collect anything you haven't approved. "
                            "Confirm which signals define a good prospect for you."),
-                "action": "Review signals", "tab": "signals",
+                "action": tr(lang, "Review signals"), "tab": "signals",
             })
         elif not confirmed:
             items.append({
                 "key": "signals-none", "tone": "warn",
-                "title": "No signals confirmed",
-                "detail": "Every signal is rejected, so prospecting has nothing to collect.",
-                "action": "Review signals", "tab": "signals",
+                "title": tr(lang, "No signals confirmed"),
+                "detail": tr(lang, "Every signal is rejected, so prospecting has nothing to collect."),
+                "action": tr(lang, "Review signals"), "tab": "signals",
             })
 
         if not n_companies and confirmed:
             items.append({
                 "key": "discover", "tone": "good",
-                "title": "No companies yet",
-                "detail": ("Signals are confirmed but nothing has been collected. "
+                "title": tr(lang, "No companies yet"),
+                "detail": tr(lang, "Signals are confirmed but nothing has been collected. "
                            "Discovery is free to try — no account needed."),
-                "action": "Find businesses", "tab": "discover",
+                "action": tr(lang, "Find businesses"), "tab": "discover",
             })
 
         unprofiled = unprofiled_count
         if unprofiled:
             items.append({
                 "key": "profile", "tone": "good",
-                "title": f"{unprofiled} companies not looked at yet",
-                "detail": ("Reading their websites is free and it is what makes "
+                "title": tr(lang, "{n} companies not looked at yet", n=unprofiled),
+                "detail": tr(lang, "Reading their websites is free and it is what makes "
                            "an email specific — who their agency is, what they "
                            "are missing, whether they are spending on ads."),
-                "action": "Read their sites", "tab": "discover",
+                "action": tr(lang, "Read their sites"), "tab": "discover",
             })
 
         if pending:
             items.append({
                 "key": "outbox", "tone": "warn",
-                "title": (f"{len(pending)} email waiting for approval" if len(pending) == 1
-                          else f"{len(pending)} emails waiting for approval"),
-                "detail": "Nothing sends until you approve it. Read them one at a time.",
-                "action": "Open the decisions desk", "tab": "outbox",
+                "title": (tr(lang, "{n} email waiting for approval", n=len(pending)) if len(pending) == 1
+                          else tr(lang, "{n} emails waiting for approval", n=len(pending))),
+                "detail": tr(lang, "Nothing sends until you approve it. Read them one at a time."),
+                "action": tr(lang, "Open the decisions desk"), "tab": "outbox",
             })
 
         if open_convos:
             items.append({
                 "key": "replies", "tone": "good",
-                "title": (f"{open_convos} live conversation" if open_convos == 1
-                          else f"{open_convos} live conversations"),
-                "detail": "People replied. Check how Harvey is handling them.",
-                "action": "Read conversations", "tab": "conversations",
+                "title": (tr(lang, "{n} live conversation", n=open_convos) if open_convos == 1
+                          else tr(lang, "{n} live conversations", n=open_convos)),
+                "detail": tr(lang, "People replied. Check how Harvey is handling them."),
+                "action": tr(lang, "Read conversations"), "tab": "conversations",
             })
 
         return {"items": items, "stats": stats}
@@ -1165,8 +1183,9 @@ CATEGORY_ORDER = ["discovery", "profile", "people", "verification"]
 
 
 @app.get("/api/signals")
-async def get_signals():
+async def get_signals(request: Request):
     """The signal vocabulary, grouped for review, with live cohort sizes."""
+    lang = request_lang(request)
     try:
         from harvey.signals import seed_signal_catalog
 
@@ -1189,6 +1208,9 @@ async def get_signals():
                 seen = counts.get(sig["code"], {})
                 rows.append({
                     **sig,
+                    "label": tr(lang, sig.get("label", "")),
+                    "description": tr(lang, sig.get("description", "")),
+                    "cost_note": tr(lang, sig.get("cost_note", "")),
                     "companies": seen.get("companies", 0),
                     "observations": seen.get("observations", 0),
                 })
@@ -1196,8 +1218,8 @@ async def get_signals():
                 meta = CATEGORY_META.get(cat, {})
                 groups.append({
                     "key": cat,
-                    "label": meta.get("label", cat.title()),
-                    "blurb": meta.get("blurb", ""),
+                    "label": tr(lang, meta.get("label", cat.title())),
+                    "blurb": tr(lang, meta.get("blurb", "")),
                     "signals": rows,
                 })
         for sig in codes:
@@ -1214,18 +1236,19 @@ async def get_signals():
 @app.post("/api/signals/status")
 async def set_signals_status(request: Request):
     """Confirm or reject one signal, or a whole category at once."""
+    lang = request_lang(request)
     try:
         body = await request.json()
         status = (body.get("status") or "").strip()
         codes = body.get("codes") or ([body["code"]] if body.get("code") else [])
         if status not in ("proposed", "confirmed", "rejected"):
             return JSONResponse(
-                {"success": False, "message": f"invalid status: {status!r}"},
+                {"success": False, "message": tr(lang, "invalid status: {status}", status=repr(status))},
                 status_code=400,
             )
         if not codes:
             return JSONResponse(
-                {"success": False, "message": "no signal codes given"}, status_code=400
+                {"success": False, "message": tr(lang, "no signal codes given")}, status_code=400
             )
 
         from harvey.signals import seed_signal_catalog
@@ -1297,7 +1320,8 @@ async def get_runs_api():
 WEB_DIR = (Path(__file__).resolve().parent / "web")
 
 
-TEXT_TYPES = {".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml"}
+TEXT_TYPES = {".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml",
+              ".json": "application/json"}
 BINARY_TYPES = {".woff2": "font/woff2", ".woff": "font/woff", ".png": "image/png"}
 
 

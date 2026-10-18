@@ -17,7 +17,7 @@ function applyTheme(mode) {
   if (mode === 'auto') root.removeAttribute('data-theme');
   else root.setAttribute('data-theme', mode);
   const btn = document.getElementById('theme-btn');
-  if (btn) btn.textContent = mode;
+  if (btn) btn.textContent = t(mode);
 }
 
 function cycleTheme() {
@@ -95,7 +95,7 @@ const STATUS = {
 function statusMeta(status) {
   const key = String(status || '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
   const hit = STATUS[key];
-  if (hit) return { label: hit[0], tone: hit[1] };
+  if (hit) return { label: t(hit[0]), tone: hit[1] };
   const label = String(status || 'unknown').replace(/_/g, ' ');
   return { label: label.charAt(0).toUpperCase() + label.slice(1), tone: 'idle' };
 }
@@ -110,7 +110,7 @@ function formatDate(d) {
   try {
     const dt = new Date(d);
     if (isNaN(dt)) return escHtml(d);
-    return dt.toLocaleString('en-US', {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+    return dt.toLocaleString(locale(), {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
   } catch { return escHtml(d); }
 }
 
@@ -121,11 +121,13 @@ function emptyState(glyph, title, copy) {
 }
 
 function offlineState() {
-  return emptyState('&#9888;', 'Dashboard can\'t reach the server',
-    'The dashboard process may have stopped. Restart it with <b>harvey dashboard</b> and refresh this page.');
+  return emptyState('&#9888;', t('Dashboard can\'t reach the server'),
+    t('The dashboard process may have stopped. Restart it with <b>harvey dashboard</b> and refresh this page.'));
 }
 
 async function api(path, opts) {
+  opts = Object.assign({}, opts);
+  opts.headers = Object.assign({'X-Harvey-Lang': LANG}, opts.headers);
   try {
     const r = await fetch(path, opts);
     if (!r.ok) return null;
@@ -136,11 +138,11 @@ async function api(path, opts) {
 }
 
 function showToast(msg, type) {
-  const t = document.createElement('div');
-  t.className = 'toast ' + type;
-  t.textContent = msg;
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2600);
+  const toast = document.createElement('div');
+  toast.className = 'toast ' + type;
+  toast.textContent = msg;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 2600);
 }
 
 function toggleVisibility(inputId) {
@@ -192,9 +194,8 @@ async function loadToday() {
   if (!items.length) {
     el.innerHTML = '<div class="queue-clear">' +
       '<div class="glyph">&#10003;</div><div>' +
-      '<div class="qtitle">Nothing needs you</div>' +
-      '<div class="qdetail">Harvey has everything it needs. Anything that requires a ' +
-      'decision — an email to approve, a signal to confirm — shows up here.</div>' +
+      '<div class="qtitle">' + t('Nothing needs you') + '</div>' +
+      '<div class="qdetail">' + t('Harvey has everything it needs. Anything that requires a decision — an email to approve, a signal to confirm — shows up here.') + '</div>' +
       '</div></div>';
     return;
   }
@@ -219,13 +220,13 @@ function renderFigures(stats) {
     '<span class="v' + (value ? '' : ' zero') + '">' + value + '</span></div>';
 
   el.innerHTML = '<div class="figures">' +
-    row('Companies', stats.companies || 0) +
-    row('Contacts', stats.prospects || 0) +
-    row('Signals on', stats.signals_confirmed || 0) +
-    row('Not yet read', stats.unprofiled || 0) +
-    row('Awaiting approval', stats.outbox_pending || 0) +
-    row('Scheduled', stats.outbox_approved || 0) +
-    row('Live conversations', stats.open_conversations || 0) +
+    row(t('Companies'), stats.companies || 0) +
+    row(t('Contacts'), stats.prospects || 0) +
+    row(t('Signals on'), stats.signals_confirmed || 0) +
+    row(t('Not yet read'), stats.unprofiled || 0) +
+    row(t('Awaiting approval'), stats.outbox_pending || 0) +
+    row(t('Scheduled'), stats.outbox_approved || 0) +
+    row(t('Live conversations'), stats.open_conversations || 0) +
   '</div>';
 }
 
@@ -235,7 +236,7 @@ async function loadTodayActivity() {
   const data = await api('/api/activity');
   if (!Array.isArray(data) || !data.length) {
     el.innerHTML = '<p class="muted" style="font-size:12.5px">' +
-      'Nothing yet. Every action Harvey takes shows up here.</p>';
+      t('Nothing yet. Every action Harvey takes shows up here.') + '</p>';
     return;
   }
   el.innerHTML = '<div class="activity-feed">' + data.slice(0, 12).map(a =>
@@ -280,8 +281,7 @@ async function loadRuns() {
         formatDate(r.started_at) + '</span></span>' +
       '<span style="text-align:right;flex:none">' + badge(r.status) +
         '<br><span class="muted" style="font-family:var(--mono);font-size:11px">' +
-        (r.records || 0) + ' rec &middot; ' +
-        (r.cost_usd ? '$' + Number(r.cost_usd).toFixed(4) : 'free') + '</span></span>' +
+        t('{n} rec &middot; {cost}', {n: (r.records || 0), cost: (r.cost_usd ? '$' + Number(r.cost_usd).toFixed(4) : t('free'))}) + '</span></span>' +
     '</div>').join('') + '</div>';
 }
 
@@ -303,7 +303,7 @@ async function loadSetupStatus() {
               : '<span class="check-icon pending"></span>') +
       '<div class="check-info">' +
         '<div class="check-label ' + (c.done ? 'done' : '') + '">' + escHtml(c.label) +
-          (optional ? '<span class="optional-tag">optional</span>' : '') + '</div>' +
+          (optional ? '<span class="optional-tag">' + t('optional') + '</span>' : '') + '</div>' +
         (!c.done ? '<div class="check-help">' + escHtml(c.help) + '</div>' : '') +
       '</div></div>';
 
@@ -312,13 +312,13 @@ async function loadSetupStatus() {
 
   el.innerHTML =
     '<div class="rail-block">' +
-      '<div class="subhead">Setup &mdash; ' + pct + '%</div>' +
+      '<div class="subhead">' + t('Setup &mdash; {pct}%', {pct: pct}) + '</div>' +
       '<div class="progress-bar" style="margin-bottom:14px">' +
         '<div class="progress-fill yellow" style="width:' + pct + '%"></div></div>' +
       required.map(c => renderCheck(c, false)).join('') +
       (optional.length
         ? '<details style="margin-top:10px"><summary class="muted" ' +
-          'style="font-size:12px">' + optional.length + ' optional</summary>' +
+          'style="font-size:12px">' + t('{n} optional', {n: optional.length}) + '</summary>' +
           '<div style="margin-top:6px">' +
           optional.map(c => renderCheck(c, true)).join('') + '</div></details>'
         : '') +
@@ -339,7 +339,7 @@ async function loadSignals() {
   sumEl.innerHTML = '<div class="sig-summary">' +
     ['confirmed', 'proposed', 'rejected'].map(k =>
       '<div class="sig-stat ' + k + '"><div class="n">' + (s[k] || 0) + '</div>' +
-      '<div class="k">' + (k === 'proposed' ? 'awaiting you' : k) + '</div></div>'
+      '<div class="k">' + (k === 'proposed' ? t('awaiting you') : t(k)) + '</div></div>'
     ).join('') +
     '</div>';
 
@@ -353,9 +353,9 @@ async function loadSignals() {
       (undecided
         ? '<div style="display:flex;gap:6px;flex-shrink:0">' +
             '<button class="btn btn-primary btn-sm" onclick=\'setSignals(' +
-              JSON.stringify(codes) + ", \"confirmed\")'>Confirm all " + undecided + '</button>' +
+              JSON.stringify(codes) + ", \"confirmed\")'>" + t('Confirm all {n}', {n: undecided}) + '</button>' +
             '<button class="btn btn-secondary btn-sm" onclick=\'setSignals(' +
-              JSON.stringify(codes) + ", \"rejected\")'>Skip all</button>" +
+              JSON.stringify(codes) + ", \"rejected\")'>" + t('Skip all') + '</button>' +
           '</div>'
         : '') +
       '</div>' +
@@ -370,22 +370,21 @@ function sigRow(sig) {
   const free = /free|included/i.test(sig.cost_note || '');
   const costCls = free ? 'free' : (/\$/.test(sig.cost_note || '') ? 'paid' : '');
   const seen = sig.companies
-    ? '<span class="cost-chip">seen on ' + sig.companies +
-      (sig.companies === 1 ? ' company' : ' companies') + ' so far</span>' : '';
+    ? '<span class="cost-chip">' + t(sig.companies === 1 ? 'seen on {n} company so far' : 'seen on {n} companies so far', {n: sig.companies}) + '</span>' : '';
   const floor = sig.confidence_floor > 0
-    ? '<span class="cost-chip">only recorded above ' +
-      Math.round(sig.confidence_floor * 100) + '% confidence</span>' : '';
+    ? '<span class="cost-chip">' +
+      t('only recorded above {n}% confidence', {n: Math.round(sig.confidence_floor * 100)}) + '</span>' : '';
 
   const decide = sig.status === 'confirmed'
     ? '<button class="btn btn-secondary btn-sm" onclick="setSignals([\'' + sig.code +
-        '\'],\'rejected\')">Turn off</button>'
+        '\'],\'rejected\')">' + t('Turn off') + '</button>'
     : sig.status === 'rejected'
       ? '<button class="btn btn-secondary btn-sm" onclick="setSignals([\'' + sig.code +
-          '\'],\'confirmed\')">Turn on</button>'
+          '\'],\'confirmed\')">' + t('Turn on') + '</button>'
       : '<button class="btn btn-primary btn-sm" onclick="setSignals([\'' + sig.code +
-          '\'],\'confirmed\')">Confirm</button>' +
+          '\'],\'confirmed\')">' + t('Confirm') + '</button>' +
         '<button class="btn btn-secondary btn-sm" onclick="setSignals([\'' + sig.code +
-          '\'],\'rejected\')">Skip</button>';
+          '\'],\'rejected\')">' + t('Skip') + '</button>';
 
   return '<div class="sig-row ' + (sig.status === 'rejected' ? 'rejected' : '') + '">' +
     '<div class="sig-main">' +
@@ -393,7 +392,7 @@ function sigRow(sig) {
         '<span class="sig-code">' + escHtml(sig.code) + '</span></div>' +
       '<div class="sig-desc">' + escHtml(sig.description) + '</div>' +
       '<div class="sig-meta">' +
-        '<span class="cost-chip ' + costCls + '">' + escHtml(sig.cost_note || 'cost unknown') + '</span>' +
+        '<span class="cost-chip ' + costCls + '">' + escHtml(sig.cost_note || t('cost unknown')) + '</span>' +
         floor + seen + badge(sig.status) +
       '</div>' +
     '</div>' +
@@ -410,12 +409,17 @@ async function setSignals(codes, status) {
   if (data && data.success) {
     showToast(
       status === 'confirmed'
-        ? 'Confirmed ' + data.changed + ' signal' + (data.changed === 1 ? '' : 's') +
-          ' — Harvey will collect ' + (data.changed === 1 ? 'it' : 'them') + ' from now on.'
-        : data.changed + ' signal' + (data.changed === 1 ? '' : 's') + ' turned off.',
+        ? t(data.changed === 1
+            ? 'Confirmed {n} signal — Harvey will collect it from now on.'
+            : 'Confirmed {n} signals — Harvey will collect them from now on.',
+            {n: data.changed})
+        : t(data.changed === 1
+            ? '{n} signal turned off.'
+            : '{n} signals turned off.',
+            {n: data.changed}),
       'success');
   } else {
-    showToast('Could not update that signal.', 'error');
+    showToast(t('Could not update that signal.'), 'error');
   }
   loadSignals();
 }
@@ -433,20 +437,20 @@ async function loadDiscoverProviders() {
   _provider = _provider || data.selected || data.default;
   el.innerHTML = '<div class="prov-grid">' + data.providers.map(p => {
     const ready = p.configured
-      ? '<span class="badge t-good">ready</span>'
-      : '<span class="badge t-waiting">needs a key</span>';
+      ? '<span class="badge t-good">' + t('ready') + '</span>'
+      : '<span class="badge t-waiting">' + t('needs a key') + '</span>';
     return '<div class="prov-card ' + (p.key === _provider ? 'selected' : '') +
       '" onclick="pickProvider(\'' + p.key + '\')">' +
       '<div class="prov-head"><h3>' + escHtml(p.label) + '</h3>' + ready + '</div>' +
       '<div class="blurb">' + escHtml(p.blurb) + '</div>' +
-      '<div class="row"><span class="k">Cost</span><span class="v">' +
+      '<div class="row"><span class="k">' + t('Cost') + '</span><span class="v">' +
         escHtml(p.cost_note) + '</span></div>' +
-      '<div class="row"><span class="k">Free</span><span class="v">' +
+      '<div class="row"><span class="k">' + t('Free') + '</span><span class="v">' +
         escHtml(p.free_tier) + '</span></div>' +
       (p.needs_key
-        ? '<div class="row"><span class="k">Setup</span><span class="v">' +
-          escHtml(p.env_keys.join(', ')) + ' in .env &middot; ' +
-          '<a href="' + escHtml(p.signup_url) + '" target="_blank" rel="noopener">get a key</a>' +
+        ? '<div class="row"><span class="k">' + t('Setup') + '</span><span class="v">' +
+          escHtml(p.env_keys.join(', ')) + ' ' + t('in .env') + ' &middot; ' +
+          '<a href="' + escHtml(p.signup_url) + '" target="_blank" rel="noopener">' + t('get a key') + '</a>' +
           '</span></div>'
         : '') +
       (p.caveat ? '<div class="caveat">' + escHtml(p.caveat) + '</div>' : '') +
@@ -463,8 +467,8 @@ async function loadDiscoverProviders() {
     // A finished run leaves the button stuck on "Running…" otherwise.
     const btn = document.getElementById('disc-run');
     btn.disabled = true;
-    btn.textContent = 'Estimate first';
-    showToast('Discovery finished.', 'success');
+    btn.textContent = t('Estimate first');
+    showToast(t('Discovery finished.'), 'success');
   }
   renderDiscoverResult(data.last_report, running);
 }
@@ -472,7 +476,7 @@ async function loadDiscoverProviders() {
 function pickProvider(key) {
   _provider = key;
   document.getElementById('disc-run').disabled = true;
-  document.getElementById('disc-run').textContent = 'Estimate first';
+  document.getElementById('disc-run').textContent = t('Estimate first');
   document.getElementById('discover-estimate').innerHTML = '';
   loadDiscoverProviders();
 }
@@ -491,14 +495,14 @@ function discoverBody() {
 
 async function estimateDiscovery() {
   const el = document.getElementById('discover-estimate');
-  el.innerHTML = '<p class="muted" style="font-size:13px">Pricing it…</p>';
+  el.innerHTML = '<p class="muted" style="font-size:13px">' + t('Pricing it…') + '</p>';
   const data = await api('/api/discover/estimate', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(discoverBody()),
   });
   if (!data || data.error) {
     el.innerHTML = '<div class="test-result error">' +
-      escHtml((data && data.error) || 'Could not estimate.') + '</div>';
+      escHtml((data && data.error) || t('Could not estimate.')) + '</div>';
     return;
   }
 
@@ -506,35 +510,35 @@ async function estimateDiscovery() {
   const over = data.estimated_cost > cap;
   el.innerHTML = '<div class="estimate-box">' +
     '<div class="amount ' + (data.free ? 'free' : 'paid') + '">' +
-      (data.free ? 'Free' : '$' + data.estimated_cost.toFixed(4)) + '</div>' +
+      (data.free ? t('Free') : '$' + data.estimated_cost.toFixed(4)) + '</div>' +
     '<div class="muted" style="font-size:13px;margin-top:2px">' +
-      data.query_count + ' quer' + (data.query_count === 1 ? 'y' : 'ies') +
-      (data.free ? '' : ' &middot; cap is $' + cap.toFixed(2)) + '</div>' +
+      t(data.query_count === 1 ? '{n} query' : '{n} queries', {n: data.query_count}) +
+      (data.free ? '' : t(' &middot; cap is ${cap}', {cap: cap.toFixed(2)})) + '</div>' +
     (over ? '<div class="test-result error" style="margin-top:12px">' +
-      'Over your cap. Raise the cap or narrow the search.</div>' : '') +
+      t('Over your cap. Raise the cap or narrow the search.') + '</div>' : '') +
     '<div class="query-list">' +
       data.queries.slice(0, 40).map(escHtml).join('<br>') +
-      (data.queries.length > 40 ? '<br>… and ' + (data.queries.length - 40) + ' more' : '') +
+      (data.queries.length > 40 ? '<br>' + t('… and {n} more', {n: data.queries.length - 40}) : '') +
     '</div></div>';
 
   const btn = document.getElementById('disc-run');
   btn.disabled = over;
-  btn.textContent = over ? 'Over cap'
-    : (data.free ? 'Run — free' : 'Run — spend up to $' + data.estimated_cost.toFixed(2));
+  btn.textContent = over ? t('Over cap')
+    : (data.free ? t('Run — free') : t('Run — spend up to ${cost}', {cost: data.estimated_cost.toFixed(2)}));
 }
 
 async function runDiscovery() {
   const btn = document.getElementById('disc-run');
   btn.disabled = true;
-  btn.textContent = 'Running…';
+  btn.textContent = t('Running…');
   const data = await api('/api/discover/run', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(discoverBody()),
   });
   if (data && data.success) {
-    showToast('Discovery started — ' + data.queries + ' queries.', 'success');
+    showToast(t('Discovery started — {n} queries.', {n: data.queries}), 'success');
   } else {
-    showToast((data && data.message) || 'Could not start.', 'error');
+    showToast((data && data.message) || t('Could not start.'), 'error');
     btn.disabled = false;
   }
   loadDiscoverProviders();
@@ -542,17 +546,18 @@ async function runDiscovery() {
 
 async function stopDiscovery() {
   const data = await api('/api/discover/stop', {method: 'POST'});
-  showToast(data && data.success ? 'Stopping after the current query.'
-                                 : 'Could not stop.', data ? 'success' : 'error');
+  showToast(data && data.success ? t('Stopping after the current query.')
+                                 : t('Could not stop.'), data ? 'success' : 'error');
   loadDiscoverProviders();
 }
 
 function renderDiscoverResult(report, running) {
   const el = document.getElementById('discover-result');
   if (running) {
-    el.innerHTML = '<div class="card"><h2>Running…</h2>' +
-      '<p class="muted" style="font-size:13px">Harvey is working through the ' +
-      'queries. Results land in Companies, and the run log is on Today.</p></div>';
+    el.innerHTML = '<div class="card"><h2>' + t('Running…') + '</h2>' +
+      '<p class="muted" style="font-size:13px">' +
+      t('Harvey is working through the queries. Results land in Companies, and the run log is on Today.') +
+      '</p></div>';
     return;
   }
   if (!report) { el.innerHTML = ''; return; }
@@ -562,18 +567,18 @@ function renderDiscoverResult(report, running) {
     '<div class="value"' + (tone ? ' style="color:var(--' + tone + ')"' : '') + '>' +
     value + '</div></div>';
 
-  el.innerHTML = '<div class="subhead">Last run</div>' +
+  el.innerHTML = '<div class="subhead">' + t('Last run') + '</div>' +
     '<div class="stats-grid">' +
-      stat('New companies', report.new_companies || 0, 'accent') +
-      stat('Already known', report.known_companies || 0) +
-      stat('Observations', report.observations || 0) +
-      stat('Filtered as junk', report.junk || 0) +
-      stat('Actual cost', report.actual_cost ? '$' + report.actual_cost.toFixed(4) : 'free') +
+      stat(t('New companies'), report.new_companies || 0, 'accent') +
+      stat(t('Already known'), report.known_companies || 0) +
+      stat(t('Observations'), report.observations || 0) +
+      stat(t('Filtered as junk'), report.junk || 0) +
+      stat(t('Actual cost'), report.actual_cost ? '$' + report.actual_cost.toFixed(4) : t('free')) +
     '</div>' +
     (report.stopped ? '<div class="test-result error" style="margin-top:14px">' +
-      'Stopped early: ' + escHtml(report.stopped) + '</div>' : '') +
+      t('Stopped early: {reason}', {reason: escHtml(report.stopped)}) + '</div>' : '') +
     ((report.errors || []).length
-      ? '<div class="card" style="margin-top:14px"><h2>Problems</h2>' +
+      ? '<div class="card" style="margin-top:14px"><h2>' + t('Problems') + '</h2>' +
         (report.errors || []).slice(0, 8).map(e =>
           '<div class="check-help">' + escHtml(e) + '</div>').join('') + '</div>'
       : '');
@@ -593,7 +598,7 @@ function renderCohortBuilder() {
 
   if (!confirmed.length) {
     el.innerHTML = '<p class="muted" style="font-size:13px">' +
-      'Confirm some signals above and they become the building blocks here.</p>';
+      t('Confirm some signals above and they become the building blocks here.') + '</p>';
     document.getElementById('cohort-result').innerHTML = '';
     return;
   }
@@ -610,9 +615,9 @@ function renderCohortBuilder() {
         '<span class="n">' + (s.companies || 0) + '</span></label>'
     ).join('') + '</div></div>';
 
-  el.innerHTML = col('Must have', 'require', '&mdash; every company in the cohort carries all of these') +
+  el.innerHTML = col(t('Must have'), 'require', t('&mdash; every company in the cohort carries all of these')) +
     '<div style="height:18px"></div>' +
-    col('Must not have', 'exclude', '&mdash; disqualifiers');
+    col(t('Must not have'), 'exclude', t('&mdash; disqualifiers'));
 }
 
 function toggleCohort(key, code, on) {
@@ -639,12 +644,13 @@ async function runCohort() {
 
   let html = '<div style="border-top:1px solid var(--border);margin-top:20px;padding-top:20px">' +
     '<div class="cohort-size">' + data.size + '</div>' +
-    '<div class="muted" style="font-size:13px;margin-top:2px">compan' +
-      (data.size === 1 ? 'y matches' : 'ies match') + ' this cohort right now</div>';
+    '<div class="muted" style="font-size:13px;margin-top:2px">' +
+      t(data.size === 1 ? 'company matches this cohort right now'
+                        : 'companies match this cohort right now') + '</div>';
 
   if (data.companies && data.companies.length) {
     html += '<div class="table-card" style="margin-top:16px"><table><thead><tr>' +
-      '<th>Company</th><th>Domain</th><th>Industry</th><th>Location</th>' +
+      '<th>' + t('Company') + '</th><th>' + t('Domain') + '</th><th>' + t('Industry') + '</th><th>' + t('Location') + '</th>' +
       '</tr></thead><tbody>' +
       data.companies.slice(0, 50).map(c =>
         '<tr><td>' + escHtml(c.name) + '</td><td class="muted">' + escHtml(c.domain) + '</td>' +
@@ -652,12 +658,11 @@ async function runCohort() {
         '<td class="muted">' + escHtml(c.location) + '</td></tr>'
       ).join('') + '</tbody></table></div>';
     if (data.size > 50) {
-      html += '<p class="muted" style="font-size:12px;margin-top:10px">Showing the first 50.</p>';
+      html += '<p class="muted" style="font-size:12px;margin-top:10px">' + t('Showing the first 50.') + '</p>';
     }
   } else if (data.size === 0) {
     html += '<p class="muted" style="font-size:13px;margin-top:12px">' +
-      'No company carries all of those yet. Either loosen the cohort, or run ' +
-      'prospecting to collect more.</p>';
+      t('No company carries all of those yet. Either loosen the cohort, or run prospecting to collect more.') + '</p>';
   }
   el.innerHTML = html + '</div>';
 }
@@ -678,13 +683,13 @@ async function loadSettings() {
     const el = document.getElementById(id);
     if (!el) return;
     el.value = '';
-    el.placeholder = isSet ? 'Saved — enter new value to change' : base;
+    el.placeholder = isSet ? t('Saved — enter new value to change') : base;
   };
   const tag = (id, ok, okLabel) => {
     const el = document.getElementById(id);
     if (!el) return;
     el.className = 'email-tag ' + (ok ? 'verified' : 'guess');
-    el.textContent = ok ? okLabel : 'not set';
+    el.textContent = ok ? okLabel : t('not set');
   };
 
   // Non-secret values repopulate
@@ -695,32 +700,32 @@ async function loadSettings() {
   document.getElementById('linkedin-email').value = data.linkedin_email || '';
   document.getElementById('cf-account-id').value = data.cloudflare_account_id || '';
 
-  savedPh('gmail-secret', data.gmail_client_secret_set, 'Enter client secret');
-  savedPh('smtp-pass', data.smtp_password_set, 'Enter password / app password');
-  savedPh('instantly-key', data.instantly_api_key_set, 'Enter your Instantly API key');
-  savedPh('reoon-key', data.reoon_api_key_set, '600 free/mo — reoon.com/email-verifier');
-  savedPh('zerobounce-key', data.zerobounce_api_key_set, '100 free/mo — best for M365/Workspace catch-alls');
-  savedPh('hunter-key', data.hunter_api_key_set, '50 free/mo + email-pattern lookup');
-  savedPh('linkedin-password', data.linkedin_password_set, 'Enter password');
-  savedPh('cf-api-token', data.cloudflare_api_token_set, 'Your Cloudflare API Token');
+  savedPh('gmail-secret', data.gmail_client_secret_set, t('Enter client secret'));
+  savedPh('smtp-pass', data.smtp_password_set, t('Enter password / app password'));
+  savedPh('instantly-key', data.instantly_api_key_set, t('Enter your Instantly API key'));
+  savedPh('reoon-key', data.reoon_api_key_set, t('600 free/mo — reoon.com/email-verifier'));
+  savedPh('zerobounce-key', data.zerobounce_api_key_set, t('100 free/mo — best for M365/Workspace catch-alls'));
+  savedPh('hunter-key', data.hunter_api_key_set, t('50 free/mo + email-pattern lookup'));
+  savedPh('linkedin-password', data.linkedin_password_set, t('Enter password'));
+  savedPh('cf-api-token', data.cloudflare_api_token_set, t('Your Cloudflare API Token'));
 
   // Gmail auth status chip
   const g = document.getElementById('gmail-status');
   if (g) {
-    if (data.gmail_authorized) { g.className = 'email-tag verified'; g.textContent = 'authorized'; }
-    else if (data.gmail_client_secret_set) { g.className = 'email-tag risky'; g.textContent = 'run: harvey gmail auth'; }
-    else { g.className = 'email-tag guess'; g.textContent = 'not set up'; }
+    if (data.gmail_authorized) { g.className = 'email-tag verified'; g.textContent = t('authorized'); }
+    else if (data.gmail_client_secret_set) { g.className = 'email-tag risky'; g.textContent = t('run: harvey gmail auth'); }
+    else { g.className = 'email-tag guess'; g.textContent = t('not set up'); }
   }
-  tag('reoon-status', data.reoon_api_key_set, 'set');
-  tag('zerobounce-status', data.zerobounce_api_key_set, 'set');
-  tag('hunter-status', data.hunter_api_key_set, 'set');
+  tag('reoon-status', data.reoon_api_key_set, t('set'));
+  tag('zerobounce-status', data.zerobounce_api_key_set, t('set'));
+  tag('hunter-status', data.hunter_api_key_set, t('set'));
 }
 
 function saveGmail() {
   const payload = {GMAIL_CLIENT_ID: document.getElementById('gmail-id').value.trim()};
   const sec = document.getElementById('gmail-secret').value;
   if (sec) payload.GMAIL_CLIENT_SECRET = sec;
-  saveEnv(payload, 'Gmail OAuth saved. Now run "harvey gmail auth" in your terminal.').then(loadSettings);
+  saveEnv(payload, t('Gmail OAuth saved. Now run "harvey gmail auth" in your terminal.')).then(loadSettings);
 }
 
 function saveSmtp() {
@@ -731,7 +736,7 @@ function saveSmtp() {
   };
   const pass = document.getElementById('smtp-pass').value;
   if (pass) payload.SMTP_PASSWORD = pass;
-  saveEnv(payload, 'SMTP settings saved.').then(loadSettings);
+  saveEnv(payload, t('SMTP settings saved.')).then(loadSettings);
 }
 
 function saveVerifiers() {
@@ -742,8 +747,8 @@ function saveVerifiers() {
   if (r) payload.REOON_API_KEY = r;
   if (z) payload.ZEROBOUNCE_API_KEY = z;
   if (h) payload.HUNTER_API_KEY = h;
-  if (!Object.keys(payload).length) { showToast('Enter at least one key first.', 'error'); return; }
-  saveEnv(payload, 'Verification keys saved.').then(loadSettings);
+  if (!Object.keys(payload).length) { showToast(t('Enter at least one key first.'), 'error'); return; }
+  saveEnv(payload, t('Verification keys saved.')).then(loadSettings);
 }
 
 async function saveEnv(payload, okMsg) {
@@ -752,37 +757,37 @@ async function saveEnv(payload, okMsg) {
     body: JSON.stringify(payload)
   });
   if (data && data.success) showToast(okMsg, 'success');
-  else showToast((data && data.message) || 'Save failed — is the dashboard still running?', 'error');
+  else showToast((data && data.message) || t('Save failed — is the dashboard still running?'), 'error');
 }
 
 function saveInstantly() {
-  saveEnv({INSTANTLY_API_KEY: document.getElementById('instantly-key').value.trim()}, 'Instantly API key saved.');
+  saveEnv({INSTANTLY_API_KEY: document.getElementById('instantly-key').value.trim()}, t('Instantly API key saved.'));
 }
 
 function saveLinkedIn() {
   const payload = {LINKEDIN_EMAIL: document.getElementById('linkedin-email').value.trim()};
   const pass = document.getElementById('linkedin-password').value;
   if (pass) payload.LINKEDIN_PASSWORD = pass;
-  saveEnv(payload, 'LinkedIn credentials saved.');
+  saveEnv(payload, t('LinkedIn credentials saved.'));
 }
 
 function saveCloudflare() {
   saveEnv({
     CLOUDFLARE_ACCOUNT_ID: document.getElementById('cf-account-id').value.trim(),
     CLOUDFLARE_API_TOKEN: document.getElementById('cf-api-token').value.trim()
-  }, 'Cloudflare credentials saved.');
+  }, t('Cloudflare credentials saved.'));
 }
 
 async function testInstantly() {
   const key = document.getElementById('instantly-key').value.trim();
   const el = document.getElementById('instantly-test-result');
-  el.innerHTML = '<div class="test-result pending">Testing&hellip;</div>';
+  el.innerHTML = '<div class="test-result pending">' + t('Testing&hellip;') + '</div>';
   const data = await api('/api/settings/test-instantly', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({api_key: key})
   });
   if (!data) {
-    el.innerHTML = '<div class="test-result error">Could not reach the dashboard server.</div>';
+    el.innerHTML = '<div class="test-result error">' + t('Could not reach the dashboard server.') + '</div>';
     return;
   }
   el.innerHTML = '<div class="test-result ' + (data.success ? 'success' : 'error') + '">' + escHtml(data.message) + '</div>';
@@ -797,25 +802,25 @@ async function loadHarveyStatus() {
 
   if (!data) {
     headerDot.className = 'status-dot offline';
-    headerText.textContent = 'Offline';
+    headerText.textContent = t('Offline');
     return;
   }
   const running = !!data.running;
 
   headerDot.className = 'status-dot ' + (running ? 'running' : 'stopped');
-  headerText.textContent = running ? 'Harvey is running' : 'Harvey is stopped';
+  headerText.textContent = running ? t('Harvey is running') : t('Harvey is stopped');
   document.getElementById('control-dot').className = 'dot ' + (running ? 'running' : 'stopped');
   const label = document.getElementById('control-label');
   label.className = 'label ' + (running ? 'running' : 'stopped');
-  label.textContent = running ? 'Running' : 'Stopped';
+  label.textContent = running ? t('Running') : t('Stopped');
 
   const meta = document.getElementById('control-meta');
   if (running && data.pid) {
     let info = 'PID ' + escHtml(String(data.pid));
-    if (data.started_at) info += ' &middot; started ' + formatDate(data.started_at);
+    if (data.started_at) info += ' &middot; ' + t('started {date}', {date: formatDate(data.started_at)});
     meta.innerHTML = info;
   } else {
-    meta.innerHTML = 'Harvey wakes every few minutes, does what needs doing, and sleeps.';
+    meta.innerHTML = t('Harvey wakes every few minutes, does what needs doing, and sleeps.');
   }
 
   document.getElementById('btn-start').style.display = running ? 'none' : '';
@@ -826,8 +831,8 @@ async function startHarvey() {
   const btn = document.getElementById('btn-start');
   btn.disabled = true;
   const data = await api('/api/harvey/start', {method: 'POST'});
-  if (data && data.success) showToast('Harvey started.', 'success');
-  else showToast((data && data.message) || 'Failed to start.', 'error');
+  if (data && data.success) showToast(t('Harvey started.'), 'success');
+  else showToast((data && data.message) || t('Failed to start.'), 'error');
   btn.disabled = false;
   loadHarveyStatus();
 }
@@ -836,8 +841,8 @@ async function stopHarvey() {
   const btn = document.getElementById('btn-stop');
   btn.disabled = true;
   const data = await api('/api/harvey/stop', {method: 'POST'});
-  if (data && data.success) showToast('Harvey stopped.', 'success');
-  else showToast((data && data.message) || 'Failed to stop.', 'error');
+  if (data && data.success) showToast(t('Harvey stopped.'), 'success');
+  else showToast((data && data.message) || t('Failed to stop.'), 'error');
   btn.disabled = false;
   loadHarveyStatus();
 }
@@ -850,7 +855,7 @@ async function loadLogs() {
     el.textContent = data.lines.join('\n');
     if (stick) el.scrollTop = el.scrollHeight;
   } else {
-    el.textContent = 'No logs yet. Start Harvey to see activity.';
+    el.textContent = t('No logs yet. Start Harvey to see activity.');
   }
 }
 
@@ -861,14 +866,14 @@ async function loadStats() {
   const data = await api('/api/stats');
   if (!data) { grid.innerHTML = offlineState(); return; }
   if (data.error) {
-    grid.innerHTML = emptyState('&#9670;', 'No pipeline data yet',
-      'Start Harvey from the <b>Controls</b> tab and it will begin prospecting, writing, and sending on its own.');
+    grid.innerHTML = emptyState('&#9670;', t('No pipeline data yet'),
+      t('Start Harvey from the <b>Controls</b> tab and it will begin prospecting, writing, and sending on its own.'));
     return;
   }
   const p = data.prospects || {}, c = data.campaigns || {}, v = data.conversations || {};
   const chips = (map) => {
     const entries = Object.entries(map || {});
-    if (!entries.length) return '<span class="chip muted">none yet</span>';
+    if (!entries.length) return '<span class="chip muted">' + t('none yet') + '</span>';
     return entries.map(([k, n]) =>
       '<span class="chip">' + escHtml(k) + ' <b>' + escHtml(String(n)) + '</b></span>'
     ).join('');
@@ -879,21 +884,21 @@ async function loadStats() {
     '<div class="breakdown">' + breakdown + '</div></div>';
 
   grid.innerHTML =
-    card('Prospects', p.total || 0, chips(p.by_status)) +
-    card('Campaigns', c.total || 0, chips(c.by_status)) +
-    card('Conversations', v.total || 0, chips(v.by_status)) +
-    card('Actions Logged', data.actions_total || 0, brainCallChips(data));
+    card(t('Prospects'), p.total || 0, chips(p.by_status)) +
+    card(t('Campaigns'), c.total || 0, chips(c.by_status)) +
+    card(t('Conversations'), v.total || 0, chips(v.by_status)) +
+    card(t('Actions Logged'), data.actions_total || 0, brainCallChips(data));
 }
 
 // Calls today per subscription — each labelled with the provider it ran on.
 function brainCallChips(data) {
-  const chip = (label, n) => '<span class="chip">' + label + ' calls today <b>' + escHtml(String(n || 0)) + '</b></span>';
+  const chip = (label, n) => '<span class="chip">' + label + ' ' + t('calls today') + ' <b>' + escHtml(String(n || 0)) + '</b></span>';
   const codex = data.codex_calls_today || 0;
   const st = data.brain_status || {};
   // A paused brain must not look healthy: say so, and why.
   const paused = st.status === 'paused'
     ? '<span class="chip" title="' + escHtml(st.reason || '') + '">' +
-      escHtml(st.provider === 'codex' ? 'Codex' : 'Brain') + ' <b>paused</b>: ' +
+      escHtml(st.provider === 'codex' ? 'Codex' : 'Brain') + ' <b>' + t('paused') + '</b>: ' +
       escHtml((st.reason || '').slice(0, 120)) + '</span>'
     : '';
   if (data.brain_provider === 'codex') {
@@ -926,20 +931,20 @@ function emailTag(p) {
 function quotaCardHtml(data) {
   const provider = data && data.quota_provider;
   if (!provider) return '';
-  const title = provider === 'codex' ? 'Codex (ChatGPT plan) Quota' : 'Claude Subscription Quota';
+  const title = provider === 'codex' ? t('Codex (ChatGPT plan) Quota') : t('Claude Subscription Quota');
   let html = '<h2>' + escHtml(title) + '</h2>';
   if (!data.quota || !Object.keys(data.quota).length) {
     const why = provider === 'codex'
-      ? "Quota unavailable: Harvey couldn't read your ChatGPT plan's limits (check codex login, the Codex CLI version, and network)."
-      : "Quota unavailable: Harvey couldn't read your Claude subscription's limits (check claude login and network).";
-    return html + '<p class="muted">' + escHtml(why) + ' Until it can, budgets count Harvey\'s own calls.</p>';
+      ? t("Quota unavailable: Harvey couldn't read your ChatGPT plan's limits (check codex login, the Codex CLI version, and network).")
+      : t("Quota unavailable: Harvey couldn't read your Claude subscription's limits (check claude login and network).");
+    return html + '<p class="muted">' + escHtml(why) + ' ' + t("Until it can, budgets count Harvey's own calls.") + '</p>';
   }
-  const labels = {five_hour: '5-hour window', seven_day: 'Weekly', primary: 'Primary window',
-                  secondary: 'Secondary window', limit_reached: 'Usage limit reached'};
+  const labels = {five_hour: t('5-hour window'), seven_day: t('Weekly'), primary: t('Primary window'),
+                  secondary: t('Secondary window'), limit_reached: t('Usage limit reached')};
   for (const [key, w] of Object.entries(data.quota)) {
     const pct = Math.min(100, Math.max(0, w.utilization || 0));
     const color = pct >= 80 ? 'yellow' : 'green';
-    const resets = w.resets_at ? 'resets ' + formatDate(w.resets_at) : '';
+    const resets = w.resets_at ? t('resets {date}', {date: formatDate(w.resets_at)}) : '';
     html += '<div class="progress-wrap">' +
       '<div class="progress-label">' +
         '<span class="text">' + escHtml(labels[key] || key) + (resets ? ' &middot; ' + escHtml(resets) : '') + '</span>' +
@@ -963,26 +968,26 @@ async function loadUsage() {
 
   // Totals cards — usage-first (calls is the headline; tokens as chips).
   // No dollars: on a subscription plan usage isn't billed per token.
-  const t = data.totals || {};
+  const totals = data.totals || {};
   const card = (label, p) => {
     p = p || {};
     return '<div class="stat-card"><div class="label">' + label + '</div>' +
       '<div class="value">' + (p.calls || 0) + '</div>' +
       '<div class="breakdown">' +
-        '<span class="chip">calls</span>' +
-        '<span class="chip">out <b>' + fmtTokens(p.output_tokens) + '</b></span>' +
-        '<span class="chip">in <b>' + fmtTokens(p.input_tokens) + '</b></span>' +
-        '<span class="chip">cached <b>' + fmtTokens(p.cache_read_tokens) + '</b></span>' +
+        '<span class="chip">' + t('calls') + '</span>' +
+        '<span class="chip">' + t('out') + ' <b>' + fmtTokens(p.output_tokens) + '</b></span>' +
+        '<span class="chip">' + t('in') + ' <b>' + fmtTokens(p.input_tokens) + '</b></span>' +
+        '<span class="chip">' + t('cached') + ' <b>' + fmtTokens(p.cache_read_tokens) + '</b></span>' +
       '</div></div>';
   };
-  statsEl.innerHTML = card('Today', t.today) + card('Last 7 Days', t.week) + card('Last 30 Days', t.month);
+  statsEl.innerHTML = card(t('Today'), totals.today) + card(t('Last 7 Days'), totals.week) + card(t('Last 30 Days'), totals.month);
 
   // Daily bars — output tokens per day (the work done)
   const dailyEl = document.getElementById('usage-daily');
   const days = data.by_day || [];
   if (days.length) {
     const maxOut = Math.max(...days.map(d => d.output_tokens || 0), 1);
-    let dHtml = '<h2>Daily Output Tokens (30 days)</h2>';
+    let dHtml = '<h2>' + t('Daily Output Tokens (30 days)') + '</h2>';
     for (const d of days.slice(-30)) {
       const pct = Math.max(2, (d.output_tokens || 0) / maxOut * 100);
       dHtml += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;font-size:12px">' +
@@ -990,8 +995,8 @@ async function loadUsage() {
         '<div style="flex:1;background:rgba(255,255,255,0.05);border-radius:99px;height:10px;overflow:hidden">' +
           '<div style="width:' + pct + '%;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent-deep),var(--accent))"></div>' +
         '</div>' +
-        '<span style="width:130px;text-align:right;font-variant-numeric:tabular-nums">' + fmtTokens(d.output_tokens) + ' out' +
-          ' <span class="muted">&middot; ' + (d.calls || 0) + ' calls</span></span>' +
+        '<span style="width:130px;text-align:right;font-variant-numeric:tabular-nums">' + fmtTokens(d.output_tokens) + ' ' + t('out') +
+          ' <span class="muted">&middot; ' + t('{n} calls', {n: d.calls || 0}) + '</span></span>' +
       '</div>';
     }
     dailyEl.innerHTML = dHtml;
@@ -1005,7 +1010,7 @@ async function loadUsage() {
   const table = (title, rows, keyName) => {
     if (!rows || !rows.length) return '';
     let h = '<div class="card"><h2>' + title + '</h2><div class="table-card"><table><thead><tr>' +
-      '<th>' + keyName + '</th><th>Calls</th><th>Input</th><th>Output</th><th>Cache read</th>' +
+      '<th>' + keyName + '</th><th>' + t('Calls') + '</th><th>' + t('Input') + '</th><th>' + t('Output') + '</th><th>' + t('Cache read') + '</th>' +
       '</tr></thead><tbody>';
     for (const r of rows) {
       h += '<tr><td>' + escHtml(String(r[keyName.toLowerCase()] || '')) + '</td>' +
@@ -1019,16 +1024,16 @@ async function loadUsage() {
 
   const anyRows = (data.by_agent || []).length || (data.by_task || []).length;
   if (!anyRows) {
-    tablesEl.innerHTML = emptyState('&#9680;', 'No usage recorded yet',
-      'Once Harvey starts making model calls (Claude or Codex), every one is logged here with exact calls and tokens by provider, agent and task.');
+    tablesEl.innerHTML = emptyState('&#9680;', t('No usage recorded yet'),
+      t('Once Harvey starts making model calls (Claude or Codex), every one is logged here with exact calls and tokens by provider, agent and task.'));
   } else {
     const providers = data.by_provider || [];
     const showProviders = providers.length > 1 || (providers.length === 1 && providers[0].provider !== 'claude');
     tablesEl.innerHTML =
-      (showProviders ? table('By Provider (30 days)', providers, 'Provider') : '') +
-      table('By Agent (30 days)', data.by_agent, 'Agent') +
-      table('By Task (30 days)', data.by_task, 'Task') +
-      table('By Model (30 days)', data.by_model, 'Model');
+      (showProviders ? table(t('By Provider (30 days)'), providers, t('Provider')) : '') +
+      table(t('By Agent (30 days)'), data.by_agent, t('Agent')) +
+      table(t('By Task (30 days)'), data.by_task, t('Task')) +
+      table(t('By Model (30 days)'), data.by_model, t('Model'));
   }
 }
 
@@ -1054,26 +1059,26 @@ async function loadOutbox() {
 
   actions.innerHTML =
     (pending.length && !data.paused
-      ? '<button class="btn btn-primary btn-sm" onclick="outboxApproveAll()">Approve all ' +
-        pending.length + '</button>' : '') +
+      ? '<button class="btn btn-primary btn-sm" onclick="outboxApproveAll()">' +
+        t('Approve all {n}', {n: pending.length}) + '</button>' : '') +
     (data.paused
       ? '<button class="btn btn-secondary btn-sm" onclick="sendingToggle(\'resume\')">' +
-        'Resume sending</button>'
+        t('Resume sending') + '</button>'
       : '<button class="btn btn-secondary btn-sm" onclick="sendingToggle(\'pause\')">' +
-        'Pause all sending</button>');
+        t('Pause all sending') + '</button>');
 
   // The kill switch gets a banner only when it's actually on — a permanent
   // bar for a thing that isn't happening is just noise.
   banner.innerHTML = data.paused
     ? '<div class="card" style="border-color:var(--red);margin-bottom:16px">' +
-        '<h2 style="color:var(--red)">&#9888; Sending is paused</h2>' +
+        '<h2 style="color:var(--red)">&#9888; ' + t('Sending is paused') + '</h2>' +
         '<p style="color:var(--text-2);font-size:13px">' + escHtml(data.paused) +
-        '. Approved mail stays queued until you resume.</p></div>'
+        t('. Approved mail stays queued until you resume.') + '</p></div>'
     : '';
 
   desk.innerHTML = pending.length ? renderDesk(pending, _desk.i) :
-    '<div class="card">' + emptyState('&#10003;', 'Nothing to review',
-      'Every draft Harvey writes lands here first. Approve one and it sends on schedule.') +
+    '<div class="card">' + emptyState('&#10003;', t('Nothing to review'),
+      t('Every draft Harvey writes lands here first. Approve one and it sends on schedule.')) +
     '</div>';
 
   const table = (title, rows, cols) => {
@@ -1088,17 +1093,17 @@ async function loadOutbox() {
   };
 
   list.innerHTML =
-    table('Approved &amp; scheduled', data.approved, [
-      ['To', r => r.to_email], ['Step', r => r.step], ['Subject', r => r.subject],
-      ['Sends', r => formatDate(r.send_at), true],
+    table(t('Approved &amp; scheduled'), data.approved, [
+      [t('To'), r => r.to_email], [t('Step'), r => r.step], [t('Subject'), r => r.subject],
+      [t('Sends'), r => formatDate(r.send_at), true],
     ]) +
-    table('Recently sent', data.sent, [
-      ['To', r => r.to_email], ['Step', r => r.step], ['Subject', r => r.subject],
-      ['Sent', r => formatDate(r.sent_at), true],
+    table(t('Recently sent'), data.sent, [
+      [t('To'), r => r.to_email], [t('Step'), r => r.step], [t('Subject'), r => r.subject],
+      [t('Sent'), r => formatDate(r.sent_at), true],
     ]) +
-    table('Didn\'t send', data.failed, [
-      ['To', r => r.to_email], ['Status', r => badge(r.status), false, true],
-      ['Reason', r => r.error, true], ['Updated', r => formatDate(r.updated_at), true],
+    table(t('Didn\'t send'), data.failed, [
+      [t('To'), r => r.to_email], [t('Status'), r => badge(r.status), false, true],
+      [t('Reason'), r => r.error, true], [t('Updated'), r => formatDate(r.updated_at), true],
     ]);
 }
 
@@ -1107,24 +1112,24 @@ function renderDesk(items, i) {
   const rail = items.map((it, n) =>
     '<div class="desk-item ' + (n === i ? 'active' : '') + '" onclick="deskGo(' + n + ')">' +
       '<div class="to">' + escHtml(it.to_email) + '</div>' +
-      '<div class="sub">' + escHtml(it.subject || '(no subject)') + '</div>' +
+      '<div class="sub">' + escHtml(it.subject || t('(no subject)')) + '</div>' +
     '</div>').join('');
 
   return '<div class="desk">' +
     '<div class="desk-list">' + rail + '</div>' +
     '<div class="desk-pane">' +
-      '<div class="to-line">To <b>' + escHtml(cur.to_email) + '</b> &middot; step ' +
-        cur.step + ' (' + escHtml(cur.kind) + ') &middot; sends ' +
-        formatDate(cur.send_at) + '</div>' +
-      '<div class="subject">' + escHtml(cur.subject || '(no subject)') + '</div>' +
+      '<div class="to-line">' + t('To') + ' <b>' + escHtml(cur.to_email) + '</b> &middot; ' +
+        t('step {n}', {n: cur.step}) + ' (' + escHtml(cur.kind) + ') &middot; ' +
+        t('sends {date}', {date: formatDate(cur.send_at)}) + '</div>' +
+      '<div class="subject">' + escHtml(cur.subject || t('(no subject)')) + '</div>' +
       '<div class="body">' + escHtml(cur.body) + '</div>' +
       '<div class="desk-actions">' +
         '<button class="btn btn-primary" onclick="outboxAct(\'' + cur.id + '\',\'approve\')">' +
-          'Approve <kbd>A</kbd></button>' +
+          t('Approve') + ' <kbd>A</kbd></button>' +
         '<button class="btn btn-secondary" onclick="outboxAct(\'' + cur.id + '\',\'reject\')">' +
-          'Reject <kbd>R</kbd></button>' +
+          t('Reject') + ' <kbd>R</kbd></button>' +
         '<span class="muted" style="font-size:12px;margin-left:auto">' +
-          (i + 1) + ' of ' + items.length + '</span>' +
+          t('{i} of {n}', {i: i + 1, n: items.length}) + '</span>' +
       '</div>' +
     '</div></div>';
 }
@@ -1150,22 +1155,22 @@ document.addEventListener('keydown', e => {
 
 async function outboxAct(id, action) {
   const data = await api('/api/outbox/' + encodeURIComponent(id) + '/' + action, {method: 'POST'});
-  if (data && data.success) showToast(action === 'approve' ? 'Approved — will send on schedule.' : 'Rejected.', 'success');
-  else showToast('Action failed.', 'error');
+  if (data && data.success) showToast(action === 'approve' ? t('Approved — will send on schedule.') : t('Rejected.'), 'success');
+  else showToast(t('Action failed.'), 'error');
   loadOutbox();
 }
 
 async function outboxApproveAll() {
   const data = await api('/api/outbox/approve-all', {method: 'POST'});
-  if (data && data.success) showToast('Approved ' + data.approved + ' email(s).', 'success');
-  else showToast('Approve-all failed.', 'error');
+  if (data && data.success) showToast(t('Approved {n} email(s).', {n: data.approved}), 'success');
+  else showToast(t('Approve-all failed.'), 'error');
   loadOutbox();
 }
 
 async function sendingToggle(action) {
   const data = await api('/api/sending/' + action, {method: 'POST'});
-  if (data && data.success) showToast(action === 'pause' ? 'Sending paused.' : 'Sending resumed.', 'success');
-  else showToast('Failed.', 'error');
+  if (data && data.success) showToast(action === 'pause' ? t('Sending paused.') : t('Sending resumed.'), 'success');
+  else showToast(t('Failed.'), 'error');
   loadOutbox();
 }
 
@@ -1176,11 +1181,11 @@ async function loadCompanies() {
   if (!data) { el.innerHTML = offlineState(); return; }
   _companies = data;
   if (!data.length) {
-    el.innerHTML = emptyState('&#9906;', 'No companies yet',
-      'Harvey\'s Scout agent hasn\'t researched any companies. Finish <b>Setup</b>, then start Harvey from the <b>Controls</b> tab.');
+    el.innerHTML = emptyState('&#9906;', t('No companies yet'),
+      t('Harvey\'s Scout agent hasn\'t researched any companies. Finish <b>Setup</b>, then start Harvey from the <b>Controls</b> tab.'));
     return;
   }
-  let html = '<div class="table-card"><table><thead><tr><th>Company</th><th>Domain</th><th>Industry</th><th>Size</th><th>Location</th><th>Contacts</th><th>Source</th><th>Added</th></tr></thead><tbody>';
+  let html = '<div class="table-card"><table><thead><tr><th>' + t('Company') + '</th><th>' + t('Domain') + '</th><th>' + t('Industry') + '</th><th>' + t('Size') + '</th><th>' + t('Location') + '</th><th>' + t('Contacts') + '</th><th>' + t('Source') + '</th><th>' + t('Added') + '</th></tr></thead><tbody>';
   data.forEach((c, i) => {
     const website = c.website || (c.domain ? 'https://' + c.domain : '');
     const nameLink = website
@@ -1201,19 +1206,19 @@ async function showCompanyContacts(index) {
   companyDrill = true;
   const el = document.getElementById('companies-list');
   const data = await api('/api/companies/' + encodeURIComponent(company.id) + '/contacts');
-  let html = '<div class="card"><h2>' + escHtml(company.name) + ' — Contacts</h2>' +
-    '<button class="btn btn-secondary btn-sm" onclick="loadCompanies()" style="margin-bottom:16px">&larr; Back to Companies</button>';
+  let html = '<div class="card"><h2>' + escHtml(company.name) + ' — ' + t('Contacts') + '</h2>' +
+    '<button class="btn btn-secondary btn-sm" onclick="loadCompanies()" style="margin-bottom:16px">&larr; ' + t('Back to Companies') + '</button>';
   if (!data || !data.length) {
-    html += '<p style="color:var(--text-3);font-size:13px">No contacts found at this company yet.</p></div>';
+    html += '<p style="color:var(--text-3);font-size:13px">' + t('No contacts found at this company yet.') + '</p></div>';
   } else {
-    html += '<div class="table-card"><table><thead><tr><th>Name</th><th>Title</th><th>Email</th><th>Phone</th><th>LinkedIn</th><th>Status</th><th>Source</th></tr></thead><tbody>';
+    html += '<div class="table-card"><table><thead><tr><th>' + t('Name') + '</th><th>' + t('Title') + '</th><th>' + t('Email') + '</th><th>' + t('Phone') + '</th><th>' + t('LinkedIn') + '</th><th>' + t('Status') + '</th><th>' + t('Source') + '</th></tr></thead><tbody>';
     for (const p of data) {
       const emailIcon = emailTag(p);
       const phoneIcon = p.phone_verified ? ' <span class="verified">&#10003;</span>' : '';
       html += '<tr><td>' + escHtml(p.first_name) + ' ' + escHtml(p.last_name) + '</td>' +
         '<td>' + escHtml(p.title) + '</td><td>' + escHtml(p.email) + emailIcon + '</td>' +
         '<td>' + escHtml(p.phone) + phoneIcon + '</td>' +
-        '<td>' + (p.linkedin_url ? '<a href="' + escHtml(p.linkedin_url) + '" target="_blank" rel="noopener">Profile</a>' : '') + '</td>' +
+        '<td>' + (p.linkedin_url ? '<a href="' + escHtml(p.linkedin_url) + '" target="_blank" rel="noopener">' + t('Profile') + '</a>' : '') + '</td>' +
         '<td>' + badge(p.status) + '</td><td class="muted">' + escHtml(p.source) + '</td></tr>';
     }
     html += '</tbody></table></div></div>';
@@ -1222,24 +1227,24 @@ async function showCompanyContacts(index) {
 }
 
 async function submitFeedback(entityType, entityId, promptText) {
-  const comment = prompt(promptText || 'Add your feedback:');
+  const comment = prompt(promptText || t('Add your feedback:'));
   if (!comment) return;
   const data = await api('/api/feedback', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({entity_type: entityType, entity_id: entityId, comment: comment})
   });
-  if (data && data.success) showToast('Feedback saved. Harvey will take it into account.', 'success');
-  else showToast((data && data.message) || 'Could not save feedback.', 'error');
+  if (data && data.success) showToast(t('Feedback saved. Harvey will take it into account.'), 'success');
+  else showToast((data && data.message) || t('Could not save feedback.'), 'error');
 }
 
 function fbProspect(i) {
   const p = _prospects[i];
-  if (p) submitFeedback('contact', p.id, 'Feedback on this contact:');
+  if (p) submitFeedback('contact', p.id, t('Feedback on this contact:'));
 }
 
 function fbCampaign(i) {
   const c = _campaigns[i];
-  if (c) submitFeedback('campaign', c.id, 'Leave feedback on this campaign:');
+  if (c) submitFeedback('campaign', c.id, t('Leave feedback on this campaign:'));
 }
 
 async function loadProspects() {
@@ -1248,11 +1253,11 @@ async function loadProspects() {
   if (!data) { el.innerHTML = offlineState(); return; }
   _prospects = data;
   if (!data.length) {
-    el.innerHTML = emptyState('&#9673;', 'No contacts yet',
-      'Harvey hasn\'t found any prospects. Once it\'s running, the Scout agent searches the web for people matching your ideal customer profile in <b>harvey.yaml</b>.');
+    el.innerHTML = emptyState('&#9673;', t('No contacts yet'),
+      t('Harvey hasn\'t found any prospects. Once it\'s running, the Scout agent searches the web for people matching your ideal customer profile in <b>harvey.yaml</b>.'));
     return;
   }
-  let html = '<div class="table-card"><table><thead><tr><th>Name</th><th>Title</th><th>Company</th><th>Email</th><th>Phone</th><th>Status</th><th>Source</th><th>Added</th><th></th></tr></thead><tbody>';
+  let html = '<div class="table-card"><table><thead><tr><th>' + t('Name') + '</th><th>' + t('Title') + '</th><th>' + t('Company') + '</th><th>' + t('Email') + '</th><th>' + t('Phone') + '</th><th>' + t('Status') + '</th><th>' + t('Source') + '</th><th>' + t('Added') + '</th><th></th></tr></thead><tbody>';
   data.forEach((p, i) => {
     const emailV = p.email ? (escHtml(p.email) + emailTag(p)) : '';
     const phoneV = p.phone ? (escHtml(p.phone) + (p.phone_verified ? ' <span class="verified">&#10003;</span>' : '')) : '';
@@ -1260,7 +1265,7 @@ async function loadProspects() {
       '<td>' + escHtml(p.title) + '</td><td>' + escHtml(p.company) + '</td>' +
       '<td>' + emailV + '</td><td>' + phoneV + '</td><td>' + badge(p.status) + '</td>' +
       '<td class="muted">' + escHtml(p.source) + '</td><td class="muted">' + formatDate(p.created_at) + '</td>' +
-      '<td><button class="btn btn-secondary btn-sm" onclick="fbProspect(' + i + ')">Feedback</button></td></tr>';
+      '<td><button class="btn btn-secondary btn-sm" onclick="fbProspect(' + i + ')">' + t('Feedback') + '</button></td></tr>';
   });
   el.innerHTML = html + '</tbody></table></div>';
 }
@@ -1271,25 +1276,25 @@ async function loadCampaigns() {
   if (!data) { el.innerHTML = offlineState(); return; }
   _campaigns = data;
   if (!data.length) {
-    el.innerHTML = emptyState('&#9993;', 'No campaigns yet',
-      'The Writer agent hasn\'t drafted any sequences. It kicks in automatically once Harvey has scored prospects to write for.');
+    el.innerHTML = emptyState('&#9993;', t('No campaigns yet'),
+      t('The Writer agent hasn\'t drafted any sequences. It kicks in automatically once Harvey has scored prospects to write for.'));
     return;
   }
   let html = '';
   data.forEach((c, i) => {
     let stepsHtml = '';
     for (const step of (c.sequence || [])) {
-      stepsHtml += '<div class="email-step"><div class="step-num">Email ' + escHtml(String(step.step || '?')) +
-        (step.delay_days ? ' &middot; send after ' + escHtml(String(step.delay_days)) + ' days' : '') + '</div>' +
+      stepsHtml += '<div class="email-step"><div class="step-num">' + t('Email {n}', {n: escHtml(String(step.step || '?'))}) +
+        (step.delay_days ? t(' &middot; send after {n} days', {n: escHtml(String(step.delay_days))}) : '') + '</div>' +
         '<div class="subject">' + escHtml(step.subject) + '</div>' +
         '<div class="body">' + escHtml(step.body) + '</div></div>';
     }
     const pc = (c.prospect_ids || []).length;
-    html += '<div class="campaign-card"><h3>' + escHtml(c.name || 'Untitled Campaign') + '</h3>' +
+    html += '<div class="campaign-card"><h3>' + escHtml(c.name || t('Untitled Campaign')) + '</h3>' +
       '<div class="meta">' + badge(c.status) + '<span>' + escHtml(c.channel || 'email') + '</span>' +
-      '<span>' + pc + ' prospect' + (pc !== 1 ? 's' : '') + '</span><span>' + formatDate(c.created_at) + '</span>' +
-      '<button class="btn btn-secondary btn-sm" onclick="fbCampaign(' + i + ')">Feedback</button></div>' +
-      (stepsHtml || '<p style="color:var(--text-3);font-size:13px">No email steps in this campaign.</p>') + '</div>';
+      '<span>' + t(pc === 1 ? '{n} prospect' : '{n} prospects', {n: pc}) + '</span><span>' + formatDate(c.created_at) + '</span>' +
+      '<button class="btn btn-secondary btn-sm" onclick="fbCampaign(' + i + ')">' + t('Feedback') + '</button></div>' +
+      (stepsHtml || '<p style="color:var(--text-3);font-size:13px">' + t('No email steps in this campaign.') + '</p>') + '</div>';
   });
   el.innerHTML = html;
 }
@@ -1299,8 +1304,8 @@ async function loadConversations() {
   const data = await api('/api/conversations');
   if (!data) { el.innerHTML = offlineState(); return; }
   if (!data.length) {
-    el.innerHTML = emptyState('&#9737;', 'No conversations yet',
-      'No prospects have replied so far. When they do, the Handler agent classifies each reply and responds — every thread shows up here.');
+    el.innerHTML = emptyState('&#9737;', t('No conversations yet'),
+      t('No prospects have replied so far. When they do, the Handler agent classifies each reply and responds — every thread shows up here.'));
     return;
   }
   let html = '';
@@ -1311,12 +1316,12 @@ async function loadConversations() {
       threadHtml += '<div class="thread-msg ' + cls + '"><div class="sender">' + escHtml(msg.sender) +
         ' &middot; ' + formatDate(msg.timestamp) + '</div>' + escHtml(msg.content) + '</div>';
     }
-    const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || 'Unknown';
+    const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || t('Unknown');
     html += '<div class="convo-card"><h3>' + escHtml(name) +
       (c.company ? ' <span style="color:var(--text-3);font-weight:500">&mdash; ' + escHtml(c.company) + '</span>' : '') + '</h3>' +
       '<div class="meta">' + badge(c.status) + (c.intent ? badge(c.intent) : '') +
       '<span>' + escHtml(c.prospect_email || '') + '</span><span>' + formatDate(c.updated_at) + '</span></div>' +
-      (threadHtml || '<p style="color:var(--text-3);font-size:13px">No messages in this thread yet.</p>') + '</div>';
+      (threadHtml || '<p style="color:var(--text-3);font-size:13px">' + t('No messages in this thread yet.') + '</p>') + '</div>';
   }
   el.innerHTML = html;
 }
@@ -1326,8 +1331,8 @@ async function loadActivity() {
   const data = await api('/api/activity');
   if (!data) { el.innerHTML = offlineState(); return; }
   if (!data.length) {
-    el.innerHTML = emptyState('&#9202;', 'No activity yet',
-      'Harvey hasn\'t taken any actions. Every prospect found, email written, and reply handled will appear here the moment it happens.');
+    el.innerHTML = emptyState('&#9202;', t('No activity yet'),
+      t('Harvey hasn\'t taken any actions. Every prospect found, email written, and reply handled will appear here the moment it happens.'));
     return;
   }
   let html = '<div class="activity-feed">';
@@ -1339,8 +1344,20 @@ async function loadActivity() {
   el.innerHTML = html + '</div>';
 }
 
+// Switching language re-renders in place: static markup swaps immediately,
+// everything built from API data is simply loaded again.
+function changeLanguage(lang) {
+  setLanguage(lang);
+  let theme = 'auto';
+  try { theme = localStorage.getItem('harvey-theme') || 'auto'; } catch { /* ignore */ }
+  applyTheme(THEMES.includes(theme) ? theme : 'auto');
+  loadHarveyStatus();
+  loadCurrentTab();
+}
+
 // ── Init & live refresh ──
 
+applyStaticTranslations();
 loadToday();
 loadSetupStatus();
 loadRuns();

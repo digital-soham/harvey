@@ -9,6 +9,12 @@ minor versions can still change behaviour.
 
 ### Added
 
+- **German dashboard.** Settings → Language switches the dashboard between
+  English and German (stored per browser, like the theme). Every string in the
+  dashboard, including texts the API builds (Today items, setup checks, signal
+  catalog, discovery sources), goes through one dictionary,
+  `harvey/web/i18n/de.json`, keyed by the English text; anything missing falls
+  back to English. Emails, prompts and the CLI are unchanged.
 - **Microsoft 365 mail provider.** Set `channels.email.provider: microsoft` to
   send and read through a Microsoft 365 / Outlook mailbox via Microsoft Graph,
   for domains whose mail lives in Exchange Online (which no longer accepts
